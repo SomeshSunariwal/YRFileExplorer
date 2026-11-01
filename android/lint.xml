@@ -1,0 +1,6 @@
+<lint>
+    <!-- Flutter rewrites this generated file with valid escaped-backslash Windows
+         values but unescaped drive colons. Java Properties reads these correctly.
+         Do not suppress this check on application-authored properties files. -->
+    <issue id="PropertyEscape"><ignore path="local.properties" /><ignore path="../local.properties" /><ignore path="**/local.properties" /></issue>
+</lint>

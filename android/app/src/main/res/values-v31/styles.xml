@@ -1,0 +1,1 @@
+<resources><style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar"><item name="android:windowSplashScreenBackground">@color/yr_icon_background</item><item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_yr_foreground</item><item name="android:windowBackground">@color/yr_icon_background</item></style></resources>

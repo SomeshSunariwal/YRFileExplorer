@@ -1,0 +1,151 @@
+import 'dart:typed_data';
+
+import 'package:flutter/material.dart';
+
+import 'package:yr_file_explorer/core/theme/file_categories.dart';
+
+class WindowPreviewCard extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final Uint8List? preview;
+  final bool selected, isDefault, locked;
+  final VoidCallback onSelect, onDefault;
+  final VoidCallback? onClose;
+  const WindowPreviewCard({
+    super.key,
+    required this.label,
+    required this.icon,
+    required this.preview,
+    required this.selected,
+    required this.isDefault,
+    required this.locked,
+    required this.onSelect,
+    required this.onDefault,
+    this.onClose,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final outline = selected ? primaryBlue : Theme.of(context).dividerColor;
+    final surface = colors.surfaceContainerLow;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final bandColor = Color.lerp(surface, primaryBlue, selected ? .20 : .12)!;
+    return Material(
+      color: surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: BorderSide(color: outline, width: selected ? 1.5 : 1),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onSelect,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (preview != null)
+              Padding(
+                padding: const EdgeInsets.all(8),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.memory(
+                    preview!,
+                    fit: BoxFit.cover,
+                    alignment: const Alignment(0, -.6),
+                    excludeFromSemantics: true,
+                  ),
+                ),
+              )
+            else
+              Center(child: Icon(icon, size: 36, color: primaryBlue)),
+            // Overlay the fade on the screenshot, occupying exactly its lower sixth.
+            Column(
+              children: [
+                const Spacer(flex: 5),
+                Expanded(
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.bottomCenter,
+                        end: Alignment.topCenter,
+                        colors: [bandColor, bandColor.withValues(alpha: 0)],
+                        stops: const [0, 1],
+                      ),
+                    ),
+                    child: Center(
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: colors.onSurface,
+                          shadows: [
+                            Shadow(
+                              color: Colors.black.withValues(
+                                alpha: dark ? .25 : .08,
+                              ),
+                              offset: const Offset(0, 1),
+                              blurRadius: 4,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            Positioned(
+              top: 2,
+              left: 2,
+              child: IconButton(
+                tooltip: isDefault
+                    ? 'Default startup tab'
+                    : 'Set as default startup tab',
+                onPressed: onDefault,
+                style: IconButton.styleFrom(
+                  fixedSize: const Size.square(44),
+                  padding: EdgeInsets.zero,
+                  foregroundColor: isDefault
+                      ? primaryBlue
+                      : colors.onSurfaceVariant,
+                  backgroundColor: Colors.transparent,
+                ),
+                icon: Icon(
+                  isDefault ? Icons.home_rounded : Icons.home_outlined,
+                  size: 20,
+                ),
+              ),
+            ),
+            if (onClose != null)
+              Positioned(
+                top: 2,
+                right: 2,
+                child: IconButton(
+                  tooltip: locked ? 'Window locked' : 'Close window',
+                  onPressed: locked ? null : onClose,
+                  style: IconButton.styleFrom(
+                    fixedSize: const Size.square(44),
+                    padding: EdgeInsets.zero,
+                    foregroundColor: dark
+                        ? const Color(0xffef5350)
+                        : const Color(0xffd32f2f),
+                    backgroundColor: Colors.transparent,
+                  ),
+                  icon: Icon(
+                    locked ? Icons.lock_outline : Icons.close_rounded,
+                    size: 20,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}

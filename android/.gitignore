@@ -1,0 +1,24 @@
+# Generated Android state and local configuration
+/.gradle/
+/.kotlin/
+/build/
+/captures/
+/local.properties
+/app/build/
+/app/debug/
+/app/profile/
+/app/release/
+**/GeneratedPluginRegistrant.java
+.cxx/
+.externalNativeBuild/
+
+# Private release signing material
+key.properties
+keystore.properties
+**/*.keystore
+**/*.jks
+**/*.p12
+**/*.pfx
+
+# Gradle wrapper scripts, wrapper JAR and wrapper properties are build inputs.
+# They must remain uploadable for fresh clones and Android Studio imports.
