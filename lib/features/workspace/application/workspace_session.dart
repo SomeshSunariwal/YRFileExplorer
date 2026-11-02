@@ -6,6 +6,12 @@ import 'package:yr_file_explorer/core/models/json.dart';
 import 'package:yr_file_explorer/core/theme/file_categories.dart';
 import 'package:yr_file_explorer/core/utils/file_format.dart';
 
+class WorkspaceSwipe {
+  final int fromId, toId;
+  final double progress;
+  const WorkspaceSwipe(this.fromId, this.toId, this.progress);
+}
+
 class ExplorerWindow {
   final int id;
   final String page;
@@ -15,6 +21,8 @@ class ExplorerWindow {
   final Json? profile;
   final previewKey = GlobalKey();
   bool locked = false;
+  String? url;
+  Json? payload;
   ExplorerWindow(
     this.id,
     this.path, {
@@ -24,15 +32,26 @@ class ExplorerWindow {
     this.recent = false,
     this.search = false,
     this.profile,
+    this.url,
+    this.payload,
   });
   IconData get icon => switch (page) {
     'apps' => Icons.android,
     'network' || 'ftp' || 'webdav' => Icons.dns_outlined,
+    'web' => Icons.public,
+    'downloads' => Icons.downloading_outlined,
     'lan' => Icons.computer_outlined,
     'bluetooth' => Icons.bluetooth,
     'netmanager' => Icons.wifi,
     'trash' => Icons.delete_outline,
     'analysis' => Icons.pie_chart_outline,
+    'storage_analysis' => Icons.bar_chart_rounded,
+    'analysis_results' => switch (category) {
+      'large' => Icons.insert_drive_file_outlined,
+      'recent' => Icons.history,
+      'empty' => Icons.folder_off_outlined,
+      _ => Icons.copy_all_outlined,
+    },
     'archive' => Icons.folder_zip_outlined,
     _ =>
       profile != null
@@ -59,6 +78,8 @@ class ExplorerWorkspaceSession extends ChangeNotifier {
   final homePreviewKey = GlobalKey();
   final Map<int?, Uint8List> previews = {};
   final Map<int, Future<void> Function()> pasteActions = {};
+  final Map<int, void Function(String path, bool search)>
+  localNavigationActions = {};
   final List<String> history = [];
   List<Json> defaults = [];
   Future<void> Function()? beforeSwitch;
@@ -94,6 +115,9 @@ class ExplorerWorkspaceSession extends ChangeNotifier {
     'category': window.category,
     'title': window.title,
     'recent': window.recent,
+    if (window.url != null) 'url': window.url,
+    if (window.profile != null)
+      'profile': {...window.profile!}..remove('password'),
   };
 
   int? _defaultWindowId;
@@ -111,14 +135,22 @@ class ExplorerWorkspaceSession extends ChangeNotifier {
           (entry['page'] ?? 'files') == window.page &&
           entry['path'] == window.path &&
           entry['category'] == window.category &&
-          (entry['recent'] == true) == window.recent,
+          (entry['recent'] == true) == window.recent &&
+          (entry['profile'] == null
+              ? window.profile == null
+              : window.profile != null &&
+                    ['protocol', 'host', 'port', 'username', 'share'].every(
+                      (key) =>
+                          (entry['profile'] as Map)[key] ==
+                          window.profile![key],
+                    )),
     );
     return matching.lastOrNull?.id == id;
   }
 
   void setDefaultWindow(int? id) {
     final window = windows.where((w) => w.id == id).firstOrNull;
-    if (id != null && (window == null || window.profile != null)) return;
+    if (id != null && window == null) return;
     _defaultWindowId = id;
     defaults = [
       {'kind': 'home'},
@@ -144,6 +176,9 @@ class ExplorerWorkspaceSession extends ChangeNotifier {
     onSaveDefaults?.call(defaults);
     notifyListeners();
   }
+
+  final swipeMotion = ValueNotifier<WorkspaceSwipe?>(null);
+  bool lastSwitchWasSwipe = false;
 
   int? activeId, previousActiveId, latestOpenedId;
   int _nextId = 0;
@@ -221,9 +256,36 @@ class ExplorerWorkspaceSession extends ChangeNotifier {
     bool recent = false,
     bool search = false,
     bool reuse = true,
+    Json? payload,
   }) {
     path = storagePath(path);
     if (!containsStoragePath(path)) return;
+    // Local folders share one Home tab, even when opened from New or search.
+    if (page == 'files' && category == null && !recent) {
+      final homes = windows
+          .where(
+            (w) =>
+                w.page == 'files' &&
+                w.profile == null &&
+                w.category == null &&
+                !w.recent,
+          )
+          .toList();
+      if (homes.isNotEmpty) {
+        final home = homes.last;
+        final removed = homes.take(homes.length - 1).map((w) => w.id).toSet();
+        windows.removeWhere((w) => removed.contains(w.id));
+        previews.removeWhere((id, _) => removed.contains(id));
+        pasteActions.removeWhere((id, _) => removed.contains(id));
+        localNavigationActions.removeWhere((id, _) => removed.contains(id));
+        if (removed.contains(_defaultWindowId)) _defaultWindowId = home.id;
+        home.path = path;
+        localNavigationActions[home.id]?.call(path, search);
+        remember(path);
+        activate(home.id);
+        return;
+      }
+    }
     if (reuse) {
       for (final window in windows) {
         if (window.page == page &&
@@ -232,6 +294,7 @@ class ExplorerWorkspaceSession extends ChangeNotifier {
             window.category == category &&
             window.recent == recent &&
             window.search == search) {
+          window.payload = payload ?? window.payload;
           activate(window.id);
           return;
         }
@@ -245,7 +308,9 @@ class ExplorerWorkspaceSession extends ChangeNotifier {
       title: title,
       recent: recent,
       search: search,
+      payload: payload,
     );
+    lastSwitchWasSwipe = false;
     beforeSwitch?.call();
     windows.add(window);
     latestOpenedId = window.id;
@@ -255,9 +320,13 @@ class ExplorerWorkspaceSession extends ChangeNotifier {
     notifyListeners();
   }
 
-  void openPage(String page, {bool reuse = true}) {
+  void openPage(String page, {bool reuse = true, String? url}) {
+    lastSwitchWasSwipe = false;
     for (final window in windows) {
-      if (reuse && window.page == page) {
+      if (reuse &&
+          window.page == page &&
+          (page != 'web' || window.url == url)) {
+        window.url = url ?? window.url;
         activate(window.id);
         return;
       }
@@ -267,9 +336,12 @@ class ExplorerWorkspaceSession extends ChangeNotifier {
       ++_nextId,
       root,
       page: page,
+      url: url,
       title: switch (page) {
         'apps' => 'APP',
         'network' => 'Network',
+        'web' => 'Web',
+        'downloads' => 'Download Manager',
         'lan' => 'LAN',
         'ftp' => 'FTP',
         'webdav' => 'WebDAV',
@@ -277,6 +349,7 @@ class ExplorerWorkspaceSession extends ChangeNotifier {
         'netmanager' => 'Net Manager',
         'trash' => 'Recycle Bin',
         'analysis' => 'SD Card Analyst',
+        'storage_analysis' => 'Storage Analyzer',
         _ => page,
       },
     );
@@ -294,6 +367,7 @@ class ExplorerWorkspaceSession extends ChangeNotifier {
       title: profile['name'] ?? profile['host'],
       profile: Map<String, dynamic>.of(profile),
     );
+    lastSwitchWasSwipe = false;
     beforeSwitch?.call();
     windows.add(window);
     latestOpenedId = window.id;
@@ -302,10 +376,11 @@ class ExplorerWorkspaceSession extends ChangeNotifier {
     notifyListeners();
   }
 
-  void activate(int? id) {
+  void activate(int? id, {bool fromSwipe = false}) {
     if (id != null && !windows.any((w) => w.id == id)) return;
     if (activeId != id) {
-      beforeSwitch?.call();
+      lastSwitchWasSwipe = fromSwipe;
+      if (!fromSwipe) beforeSwitch?.call();
       previousActiveId = activeId;
     }
     activeId = id;
@@ -331,11 +406,13 @@ class ExplorerWorkspaceSession extends ChangeNotifier {
   }
 
   void close(int id) {
+    lastSwitchWasSwipe = false;
     final index = windows.indexWhere((w) => w.id == id);
     if (index < 0 || windows[index].locked) return;
     windows.removeAt(index);
     previews.remove(id);
     pasteActions.remove(id);
+    localNavigationActions.remove(id);
     if (activeId == id) activeId = windows.isEmpty ? null : windows.last.id;
     notifyListeners();
   }

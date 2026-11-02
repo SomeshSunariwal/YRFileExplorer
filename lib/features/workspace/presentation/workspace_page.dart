@@ -3,11 +3,14 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
+import 'package:yr_file_explorer/core/theme/explorer_style.dart';
 import 'package:yr_file_explorer/core/models/json.dart';
+import 'package:yr_file_explorer/core/platform/native_bridge.dart';
 import 'package:yr_file_explorer/core/settings/app_settings.dart';
 import 'package:yr_file_explorer/core/utils/file_format.dart';
 import 'package:yr_file_explorer/features/analysis/presentation/sd_card_analyst_page.dart';
 import 'package:yr_file_explorer/features/analysis/presentation/storage_analysis_page.dart';
+import 'package:yr_file_explorer/features/analysis/presentation/analysis_results_page.dart';
 import 'package:yr_file_explorer/features/apps/presentation/apps_page.dart';
 import 'package:yr_file_explorer/features/archives/presentation/archive_page.dart';
 import 'package:yr_file_explorer/features/files/application/file_clipboard.dart';
@@ -16,6 +19,8 @@ import 'package:yr_file_explorer/features/home/presentation/home_page.dart';
 import 'package:yr_file_explorer/features/network/presentation/bluetooth_page.dart';
 import 'package:yr_file_explorer/features/network/presentation/net_manager_page.dart';
 import 'package:yr_file_explorer/features/network/presentation/network_page.dart';
+import 'package:yr_file_explorer/features/network/presentation/web_page.dart';
+import 'package:yr_file_explorer/features/network/presentation/download_page.dart';
 import 'package:yr_file_explorer/features/network/presentation/remote_browser_page.dart';
 import 'package:yr_file_explorer/features/recycle_bin/presentation/recycle_bin_page.dart';
 import 'package:yr_file_explorer/features/settings/presentation/settings_page.dart';
@@ -78,18 +83,53 @@ class _ExplorerWorkspaceState extends State<ExplorerWorkspace> {
     session.onPermissionGranted = restoreDefaults;
   }
 
-  void restoreDefaults() {
+  Future<void> restoreDefaults() async {
     if (restoredDefaults) return;
     restoredDefaults = true;
     for (final entry in session.defaults) {
-      if (entry['page'] == 'analysis' && entry['path'] is String) {
-        session.open(entry['path'], page: 'analysis', title: 'SD Card Analyst');
+      if (entry['profile'] is Map) {
+        final profile = Map<String, dynamic>.from(entry['profile'] as Map);
+        profile['path'] = entry['path'] ?? profile['path'] ?? '/';
+        if (profile['rememberPassword'] == true) {
+          try {
+            profile['password'] =
+                await Native.call<String>('connectionPassword', {
+                  'id':
+                      '${profile['protocol']}|${profile['host']}|${profile['port']}|${profile['username']}',
+                }) ??
+                '';
+          } catch (_) {
+            profile.remove('password');
+          }
+        }
+        if (!mounted) return;
+        session.openRemote(profile);
+        continue;
+      }
+      if (entry['page'] == 'analysis_results' && entry['path'] is String) {
+        session.open(
+          entry['path'],
+          page: 'analysis_results',
+          category: entry['category'],
+          title: entry['title'],
+        );
+        continue;
+      }
+      if (['analysis', 'storage_analysis'].contains(entry['page']) &&
+          entry['path'] is String) {
+        session.open(
+          entry['path'],
+          page: entry['page'],
+          title: entry['page'] == 'analysis'
+              ? 'SD Card Analyst'
+              : 'Storage Analyzer',
+        );
         continue;
       }
       if (entry['page'] != null &&
           entry['page'] != 'files' &&
           entry['page'] != 'archive') {
-        session.openPage(entry['page']);
+        session.openPage(entry['page'], url: entry['url']);
         continue;
       }
       if (entry['path'] is String) {
@@ -115,7 +155,7 @@ class _ExplorerWorkspaceState extends State<ExplorerWorkspace> {
   }
 
   Future<void> captureCurrent() async {
-    if (!mounted) return;
+    if (!mounted || session.swipeMotion.value != null) return;
     final id = session.activeId;
     final key = id == null
         ? session.homePreviewKey
@@ -130,13 +170,18 @@ class _ExplorerWorkspaceState extends State<ExplorerWorkspace> {
     }
     try {
       final image = await boundary.toImage(pixelRatio: .6);
-      if (!mounted || id != session.activeId) {
+      if (!mounted ||
+          id != session.activeId ||
+          session.swipeMotion.value != null) {
         image.dispose();
         return;
       }
       final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
       image.dispose();
-      if (bytes != null && mounted && id == session.activeId) {
+      if (bytes != null &&
+          mounted &&
+          id == session.activeId &&
+          session.swipeMotion.value == null) {
         session.setPreview(id, bytes.buffer.asUint8List());
       }
     } catch (_) {
@@ -145,7 +190,7 @@ class _ExplorerWorkspaceState extends State<ExplorerWorkspace> {
   }
 
   void openServer(Json profile) => Navigator.of(context).push(
-    MaterialPageRoute<void>(
+    ExplorerPageRoute<void>(
       builder: (_) => NetworkPage(
         settings: widget.settings,
         clipboard: clipboard,
@@ -176,6 +221,7 @@ class _ExplorerWorkspaceState extends State<ExplorerWorkspace> {
       'webdav',
       'bluetooth',
       'netmanager',
+      'downloads',
     ].contains(page)) {
       session.openPage(page);
       return;
@@ -204,7 +250,7 @@ class _ExplorerWorkspaceState extends State<ExplorerWorkspace> {
       ),
       _ => SettingsPage(settings: widget.settings),
     };
-    Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
+    Navigator.of(context).push(ExplorerPageRoute<void>(builder: (_) => screen));
   }
 
   @override
@@ -235,7 +281,36 @@ class _ExplorerWorkspaceState extends State<ExplorerWorkspace> {
           enabled: session.activeId == window.id,
           child: RepaintBoundary(
             key: window.previewKey,
-            child: window.page == 'bluetooth'
+            child: window.page == 'analysis_results'
+                ? AnalysisResultsPage(
+                    settings: widget.settings,
+                    clipboard: clipboard,
+                    windowId: window.id,
+                    path: window.path,
+                    kind: window.category ?? 'large',
+                    title: window.title ?? 'Analysis results',
+                    payload: window.payload,
+                  )
+                : window.page == 'web'
+                ? WebPage(
+                    settings: widget.settings,
+                    windowId: window.id,
+                    address: window.url ?? 'https://example.com',
+                  )
+                : window.page == 'downloads'
+                ? DownloadPage(
+                    settings: widget.settings,
+                    windowId: window.id,
+                    initialUrl: window.url,
+                  )
+                : window.page == 'storage_analysis'
+                ? AnalysisPage(
+                    windowId: window.id,
+                    settings: widget.settings,
+                    path: window.path,
+                    onBrowse: (path) => session.open(path),
+                  )
+                : window.page == 'bluetooth'
                 ? BluetoothPage(
                     windowId: window.id,
                     settings: widget.settings,
@@ -256,6 +331,7 @@ class _ExplorerWorkspaceState extends State<ExplorerWorkspace> {
                   )
                 : window.page == 'analysis'
                 ? SdCardAnalyst(
+                    clipboard: clipboard,
                     windowId: window.id,
                     path: window.path,
                     settings: widget.settings,

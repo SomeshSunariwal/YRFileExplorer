@@ -1,3 +1,4 @@
+import 'package:yr_file_explorer/features/workspace/presentation/widgets/explorer_bottom_bar.dart';
 import 'package:flutter/material.dart';
 
 import 'package:yr_file_explorer/core/models/json.dart';
@@ -33,7 +34,7 @@ class NetworkPage extends StatefulWidget {
 }
 
 class _NetworkPageState extends State<NetworkPage> {
-  bool searching = false, grid = false, scanning = false;
+  bool searching = false, grid = false, scanning = false, scanned = false;
   List<Json> discovered = [];
   final search = TextEditingController();
   @override
@@ -55,6 +56,7 @@ class _NetworkPageState extends State<NetworkPage> {
 
   @override
   void dispose() {
+    Native.call('cancelLanScan');
     widget.settings.removeListener(changed);
     search.dispose();
     super.dispose();
@@ -93,9 +95,9 @@ class _NetworkPageState extends State<NetworkPage> {
 
   String credentialId(Json profile) =>
       '${profile['protocol']}|${profile['host']}|${profile['port']}|${profile['username']}';
-  Future<void> connect(Json profile) async {
-    if (profile['rememberPassword'] == true) {
-      try {
+  Future<void> connect(Json profile, {bool edit = false}) async {
+    try {
+      if (profile['rememberPassword'] == true) {
         profile = {
           ...profile,
           'password':
@@ -104,30 +106,56 @@ class _NetworkPageState extends State<NetworkPage> {
               }) ??
               '',
         };
-      } catch (e) {
-        if (mounted) showError(context, e);
       }
       if (!mounted) return;
+      final saved = widget.settings.connections.any(
+        (p) =>
+            identical(p, profile) ||
+            (credentialId(p) == credentialId(profile) &&
+                p['name'] == profile['name']),
+      );
+      Json? p;
+      if (saved &&
+          !edit &&
+          (profile['rememberPassword'] == true ||
+              profile['anonymous'] == true)) {
+        p = profile;
+      } else {
+        p = await showDialog<Json>(
+          context: context,
+          builder: (_) => ConnectionDialog(profile: profile),
+        );
+      }
+      if (p == null || !mounted) return;
+      final safe = Map<String, dynamic>.of(p)..remove('password');
+      if (p['save'] == true) {
+        await Native.call('saveConnectionPassword', {
+          'id': credentialId(p),
+          'password': p['rememberPassword'] == true ? p['password'] : '',
+        });
+        if (saved && credentialId(profile) != credentialId(p)) {
+          await Native.call('saveConnectionPassword', {
+            'id': credentialId(profile),
+            'password': '',
+          });
+        }
+        widget.settings.connections.removeWhere(
+          (old) =>
+              (credentialId(old) == credentialId(profile) &&
+                  old['name'] == profile['name']) ||
+              (credentialId(old) == credentialId(p!) &&
+                  old['name'] == safe['name']),
+        );
+        widget.settings.connections.add(safe);
+        await widget.settings.save();
+      }
+      if (!mounted) return;
+      ExplorerWorkspaceSession.instance.servers = widget.settings.connections;
+      ExplorerWorkspaceSession.instance.openRemote(p);
+      if (widget.windowId == null) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) showError(context, e);
     }
-    final p = await showDialog<Json>(
-      context: context,
-      builder: (_) => ConnectionDialog(profile: profile),
-    );
-    if (p == null || !mounted) return;
-    final safe = Map<String, dynamic>.of(p)..remove('password');
-    if (p['save'] == true) {
-      await Native.call('saveConnectionPassword', {
-        'id': credentialId(p),
-        'password': p['rememberPassword'] == true ? p['password'] : '',
-      });
-      widget.settings.connections.removeWhere((e) => e['name'] == safe['name']);
-      widget.settings.connections.add(safe);
-      await widget.settings.save();
-    }
-    if (!mounted) return;
-    ExplorerWorkspaceSession.instance.servers = widget.settings.connections;
-    ExplorerWorkspaceSession.instance.openRemote(p);
-    if (widget.windowId == null) Navigator.pop(context);
   }
 
   Future<void> remove(Json p) async {
@@ -148,11 +176,19 @@ class _NetworkPageState extends State<NetworkPage> {
   }
 
   Future<void> scan() async {
-    if (scanning) return;
+    if (scanning) {
+      await Native.call('cancelLanScan');
+      return;
+    }
     setState(() => scanning = true);
     try {
       final servers = await Native.rows('lanScan');
-      if (mounted) setState(() => discovered = servers);
+      if (mounted) {
+        setState(() {
+          discovered = servers;
+          scanned = true;
+        });
+      }
     } catch (e) {
       if (mounted) showError(context, e);
     } finally {
@@ -185,13 +221,18 @@ class _NetworkPageState extends State<NetworkPage> {
       title: Text(p['name']),
       subtitle: Text('${p['protocol']} · ${p['host']}'),
       onTap: () => connect(p),
-      trailing: IconButton(
-        tooltip: 'Remove saved connection',
-        onPressed: () => remove(p),
-        icon: const Icon(Icons.more_vert),
+      trailing: PopupMenuButton<String>(
+        tooltip: 'Connection actions',
+        onSelected: (action) =>
+            action == 'edit' ? connect(p, edit: true) : remove(p),
+        itemBuilder: (_) => const [
+          PopupMenuItem(value: 'edit', child: Text('Edit connection')),
+          PopupMenuItem(value: 'remove', child: Text('Remove connection')),
+        ],
       ),
     );
     return ExplorerPane(
+      busy: scanning,
       settings: widget.settings,
       windowId: widget.windowId,
       title: Text(widget.section),
@@ -200,9 +241,13 @@ class _NetworkPageState extends State<NetworkPage> {
         ExplorerAction(
           icon: widget.section == 'FTP' || widget.section == 'WebDAV'
               ? Icons.search
+              : scanning
+              ? Icons.stop
               : Icons.radar,
           label: widget.section == 'FTP' || widget.section == 'WebDAV'
               ? 'Search'
+              : scanning
+              ? 'Stop'
               : 'Scan',
           onTap: widget.section == 'FTP' || widget.section == 'WebDAV'
               ? () => setState(() => searching = !searching)
@@ -222,7 +267,6 @@ class _NetworkPageState extends State<NetworkPage> {
       ],
       body: Column(
         children: [
-          if (scanning) const LinearProgressIndicator(minHeight: 2),
           if (searching)
             Padding(
               padding: const EdgeInsets.all(10),
@@ -246,7 +290,12 @@ class _NetworkPageState extends State<NetworkPage> {
             ),
           Expanded(
             child: ListView(
-              padding: const EdgeInsets.all(10),
+              padding: EdgeInsets.fromLTRB(
+                10,
+                10,
+                10,
+                ExplorerBottomBar.contentBottomPadding(context),
+              ),
               children: [
                 for (final group in ['LAN', 'FTP', 'WebDAV'].where(
                   (g) => widget.section == 'Network' || g == widget.section,
@@ -325,12 +374,19 @@ class _NetworkPageState extends State<NetworkPage> {
                       );
                     },
                   ),
-                if (discovered.isNotEmpty)
+                if (scanned)
                   Card(
                     child: ExpansionTile(
                       initiallyExpanded: true,
                       title: Text('Search Result (${discovered.length})'),
                       children: [
+                        if (discovered.isEmpty)
+                          const ListTile(
+                            title: Text('No SMB servers found'),
+                            subtitle: Text(
+                              'You can still add a server by its address.',
+                            ),
+                          ),
                         for (final server in discovered)
                           ListTile(
                             leading: const Icon(

@@ -116,3 +116,25 @@ class ExplorerPageTransitions extends PageTransitionsBuilder {
     );
   }
 }
+
+class ExplorerPageRoute<T> extends PageRouteBuilder<T> {
+  ExplorerPageRoute({required WidgetBuilder builder})
+    : super(
+        transitionDuration: const Duration(milliseconds: 320),
+        reverseTransitionDuration: const Duration(milliseconds: 320),
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            builder(context),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          if (MediaQuery.disableAnimationsOf(context)) return child;
+          return SlideTransition(
+            position: animation.drive(
+              Tween<Offset>(
+                begin: const Offset(1, 0),
+                end: Offset.zero,
+              ).chain(CurveTween(curve: Curves.easeInOutCubic)),
+            ),
+            child: child,
+          );
+        },
+      );
+}

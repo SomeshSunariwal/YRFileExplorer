@@ -1,3 +1,5 @@
+import 'package:yr_file_explorer/features/workspace/presentation/widgets/explorer_bottom_bar.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -90,7 +92,9 @@ class _BluetoothPageState extends State<BluetoothPage>
       if (info?['permission'] != true || info?['scanPermission'] != true) {
         await Native.call('requestBluetooth');
         await load();
-        if (info?['permission'] != true) return;
+        if (info?['permission'] != true || info?['scanPermission'] != true) {
+          return;
+        }
       }
       if (info?['enabled'] != true) {
         await Native.call('bluetoothSettings');
@@ -166,6 +170,7 @@ class _BluetoothPageState extends State<BluetoothPage>
 
   @override
   Widget build(BuildContext context) => ExplorerPane(
+    busy: scanning,
     settings: widget.settings,
     windowId: widget.windowId,
     title: const Text('Bluetooth'),
@@ -195,7 +200,6 @@ class _BluetoothPageState extends State<BluetoothPage>
     ],
     body: Column(
       children: [
-        if (scanning) const LinearProgressIndicator(minHeight: 2),
         Expanded(
           child: error != null
               ? EmptyState(title: 'Bluetooth unavailable', message: error!)
@@ -239,6 +243,9 @@ class _BluetoothPageState extends State<BluetoothPage>
                   ),
                 )
               : ListView(
+                  padding: EdgeInsets.only(
+                    bottom: ExplorerBottomBar.contentBottomPadding(context),
+                  ),
                   children: [
                     for (final device in devices.values)
                       ListTile(

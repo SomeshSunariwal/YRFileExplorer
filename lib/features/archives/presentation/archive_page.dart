@@ -1,3 +1,5 @@
+import 'package:yr_file_explorer/features/workspace/presentation/widgets/explorer_bottom_bar.dart';
+import 'package:yr_file_explorer/core/theme/explorer_style.dart';
 import 'package:flutter/material.dart';
 
 import 'package:yr_file_explorer/core/models/json.dart';
@@ -58,9 +60,9 @@ class _ArchivePageState extends State<ArchivePage> {
     'password': password,
     'charset': charset,
   };
-  Future<void> load() async {
+  Future<void> load({bool background = false}) async {
     setState(() {
-      loading = true;
+      if (!background) loading = true;
       error = null;
       selected.clear();
     });
@@ -176,7 +178,7 @@ class _ArchivePageState extends State<ArchivePage> {
       if (entry['category'] == 'Images') {
         await Navigator.push(
           context,
-          MaterialPageRoute<void>(
+          ExplorerPageRoute<void>(
             builder: (_) => ImageViewer(path: file, canDelete: false),
           ),
         );
@@ -186,7 +188,7 @@ class _ArchivePageState extends State<ArchivePage> {
       ).hasMatch(file)) {
         await Navigator.push(
           context,
-          MaterialPageRoute<void>(
+          ExplorerPageRoute<void>(
             builder: (_) => TextEditor(path: file, readOnly: true),
           ),
         );
@@ -327,7 +329,8 @@ class _ArchivePageState extends State<ArchivePage> {
     Widget action(IconData icon, String title, VoidCallback onTap) =>
         ExplorerAction(icon: icon, label: title, onTap: busy ? () {} : onTap);
     return ExplorerPane(
-      onActivate: load,
+      busy: busy,
+      onActivate: () => load(background: true),
       settings: widget.settings,
       windowId: widget.windowId,
       selecting: selected.isNotEmpty,
@@ -399,7 +402,6 @@ class _ArchivePageState extends State<ArchivePage> {
             ],
       body: Column(
         children: [
-          if (busy) const LinearProgressIndicator(minHeight: 2),
           if (prefix.isNotEmpty)
             ListTile(
               dense: true,
@@ -430,7 +432,12 @@ class _ArchivePageState extends State<ArchivePage> {
                   )
                 : grid
                 ? GridView.builder(
-                    padding: const EdgeInsets.all(10),
+                    padding: EdgeInsets.fromLTRB(
+                      10,
+                      10,
+                      10,
+                      ExplorerBottomBar.contentBottomPadding(context),
+                    ),
                     gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: explorerGridColumns(viewMode),
                       childAspectRatio: .82,
@@ -486,6 +493,9 @@ class _ArchivePageState extends State<ArchivePage> {
                     },
                   )
                 : ListView.builder(
+                    padding: EdgeInsets.only(
+                      bottom: ExplorerBottomBar.contentBottomPadding(context),
+                    ),
                     itemCount: rows.length,
                     itemBuilder: (_, i) {
                       final e = rows[i];

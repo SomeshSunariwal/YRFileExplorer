@@ -1,3 +1,5 @@
+import 'package:yr_file_explorer/features/workspace/presentation/widgets/explorer_bottom_bar.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -68,6 +70,11 @@ class _NetManagerPageState extends State<NetManagerPage>
         label: 'Settings',
         onTap: () => Native.call('networkSettings'),
       ),
+      ExplorerAction(
+        icon: Icons.wifi_tethering,
+        label: 'Hotspot',
+        onTap: () => Native.call('hotspotSettings'),
+      ),
       ExplorerAction(icon: Icons.refresh, label: 'Refresh', onTap: load),
       ExplorerAction(
         icon: Icons.filter_none,
@@ -80,7 +87,12 @@ class _NetManagerPageState extends State<NetManagerPage>
         : data == null
         ? const Center(child: CircularProgressIndicator())
         : ListView(
-            padding: const EdgeInsets.all(16),
+            padding: EdgeInsets.fromLTRB(
+              16,
+              16,
+              16,
+              ExplorerBottomBar.contentBottomPadding(context),
+            ),
             children: [
               Card(
                 child: Padding(

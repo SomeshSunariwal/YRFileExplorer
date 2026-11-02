@@ -1,9 +1,13 @@
+import com.somesh.yrfileexplorer.gradle.AndroidRpcTransform
+import org.gradle.api.attributes.Attribute
+import org.gradle.api.artifacts.type.ArtifactTypeDefinition
+
 plugins {
     id("com.android.application")
     id("dev.flutter.flutter-gradle-plugin")
 }
 android {
-    namespace = "com.explorer.fileexplorer"
+    namespace = "com.somesh.yrfileexplorer"
     compileSdk = 37
     ndkVersion = flutter.ndkVersion
     lint { lintConfig = rootProject.file("lint.xml") }
@@ -12,7 +16,7 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     defaultConfig {
-        applicationId = "com.explorer.fileexplorer"
+        applicationId = "com.somesh.yrfileexplorer"
         minSdk = 31
         targetSdk = 37
         versionCode = flutter.versionCode
@@ -27,10 +31,23 @@ android {
     }
 }
 flutter { source = "../.." }
+// Only DCERPC needs its Java SE exception reference adapted for Android.
+val androidRpc = Attribute.of("com.somesh.yrfileexplorer.android-rpc", Boolean::class.javaObjectType)
+configurations.configureEach {
+    if (isCanBeResolved) attributes.attribute(androidRpc, true)
+}
 dependencies {
+    artifactTypes.getByName("jar").attributes.attribute(androidRpc, false)
+    registerTransform(AndroidRpcTransform::class.java) {
+        from.attribute(androidRpc, false)
+            .attribute(ArtifactTypeDefinition.ARTIFACT_TYPE_ATTRIBUTE, "jar")
+        to.attribute(androidRpc, true)
+            .attribute(ArtifactTypeDefinition.ARTIFACT_TYPE_ATTRIBUTE, "jar")
+    }
     implementation("net.lingala.zip4j:zip4j:2.11.6")
     implementation("commons-net:commons-net:3.13.0")
     implementation("com.github.mwiede:jsch:2.28.8")
     implementation("com.hierynomus:smbj:0.15.0")
+    implementation("com.rapid7.client:dcerpc:0.12.13")
     implementation("com.squareup.okhttp3:okhttp:5.5.1")
 }

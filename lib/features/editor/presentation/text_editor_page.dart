@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:yr_file_explorer/shared/widgets/progress_overlay.dart';
 import 'package:yr_file_explorer/core/platform/native_bridge.dart';
 import 'package:yr_file_explorer/core/utils/file_format.dart';
 import 'package:yr_file_explorer/shared/dialogs/input_dialogs.dart';
@@ -399,124 +400,129 @@ class _TextEditorState extends State<TextEditor> {
           ),
         ],
       ),
-      body: SafeArea(
-        top: false,
-        bottom: false,
-        child: Column(
-          children: [
-            if (searching)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
-                child: Column(
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: find,
-                            onChanged: (_) {
-                              match = -1;
-                              findNext();
-                            },
-                            decoration: const InputDecoration(hintText: 'Find'),
-                          ),
-                        ),
-                        Text(
-                          '${matches.isEmpty ? 0 : match % matches.length + 1}/${matches.length}',
-                          style: const TextStyle(fontSize: 11),
-                        ),
-                        IconButton(
-                          tooltip: 'Previous match',
-                          onPressed: () => findNext(previous: true),
-                          icon: const Icon(Icons.keyboard_arrow_up),
-                        ),
-                        IconButton(
-                          tooltip: 'Next match',
-                          onPressed: findNext,
-                          icon: const Icon(Icons.keyboard_arrow_down),
-                        ),
-                        IconButton(
-                          tooltip: 'Close find',
-                          onPressed: () => setState(() => searching = false),
-                          icon: const Icon(Icons.close),
-                        ),
-                      ],
-                    ),
-                    Row(
-                      children: [
-                        FilterChip(
-                          label: const Text('Match case'),
-                          selected: matchCase,
-                          onSelected: (v) => setState(() => matchCase = v),
-                        ),
-                        if (!widget.readOnly)
-                          TextButton(
-                            onPressed: () =>
-                                setState(() => replacing = !replacing),
-                            child: const Text('Replace'),
-                          ),
-                      ],
-                    ),
-                    if (replacing)
+      body: ExplorerProgressOverlay(
+        active: saving,
+        child: SafeArea(
+          top: false,
+          bottom: false,
+          child: Column(
+            children: [
+              if (searching)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
+                  child: Column(
+                    children: [
                       Row(
                         children: [
                           Expanded(
                             child: TextField(
-                              controller: replacement,
+                              controller: find,
+                              onChanged: (_) {
+                                match = -1;
+                                findNext();
+                              },
                               decoration: const InputDecoration(
-                                hintText: 'Replace with',
+                                hintText: 'Find',
                               ),
                             ),
                           ),
-                          TextButton(
-                            onPressed: () => replace(),
-                            child: const Text('Replace'),
+                          Text(
+                            '${matches.isEmpty ? 0 : match % matches.length + 1}/${matches.length}',
+                            style: const TextStyle(fontSize: 11),
                           ),
-                          TextButton(
-                            onPressed: () => replace(all: true),
-                            child: const Text('All'),
+                          IconButton(
+                            tooltip: 'Previous match',
+                            onPressed: () => findNext(previous: true),
+                            icon: const Icon(Icons.keyboard_arrow_up),
+                          ),
+                          IconButton(
+                            tooltip: 'Next match',
+                            onPressed: findNext,
+                            icon: const Icon(Icons.keyboard_arrow_down),
+                          ),
+                          IconButton(
+                            tooltip: 'Close find',
+                            onPressed: () => setState(() => searching = false),
+                            icon: const Icon(Icons.close),
                           ),
                         ],
                       ),
-                  ],
+                      Row(
+                        children: [
+                          FilterChip(
+                            label: const Text('Match case'),
+                            selected: matchCase,
+                            onSelected: (v) => setState(() => matchCase = v),
+                          ),
+                          if (!widget.readOnly)
+                            TextButton(
+                              onPressed: () =>
+                                  setState(() => replacing = !replacing),
+                              child: const Text('Replace'),
+                            ),
+                        ],
+                      ),
+                      if (replacing)
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: replacement,
+                                decoration: const InputDecoration(
+                                  hintText: 'Replace with',
+                                ),
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: () => replace(),
+                              child: const Text('Replace'),
+                            ),
+                            TextButton(
+                              onPressed: () => replace(all: true),
+                              child: const Text('All'),
+                            ),
+                          ],
+                        ),
+                    ],
+                  ),
                 ),
+
+              Expanded(
+                child: loading
+                    ? const Center(child: CircularProgressIndicator())
+                    : error != null
+                    ? EmptyState(
+                        title: 'Cannot read text',
+                        message: error!,
+                        action: TextButton(
+                          onPressed: () => menu('Encoding'),
+                          child: const Text('Choose encoding'),
+                        ),
+                      )
+                    : TextField(
+                        controller: controller,
+                        focusNode: focus,
+                        undoController: undo,
+                        scrollController: scroll,
+                        readOnly: !editing,
+                        expands: true,
+                        maxLines: null,
+                        minLines: null,
+                        keyboardType: TextInputType.multiline,
+                        textAlignVertical: TextAlignVertical.top,
+                        style: TextStyle(
+                          fontFamily: editing ? 'monospace' : null,
+                          fontSize: fontSize,
+                          height: 1.5,
+                        ),
+                        decoration: const InputDecoration(
+                          contentPadding: EdgeInsets.all(14),
+                          border: InputBorder.none,
+                        ),
+                      ),
               ),
-            if (saving) const LinearProgressIndicator(minHeight: 2),
-            Expanded(
-              child: loading
-                  ? const Center(child: CircularProgressIndicator())
-                  : error != null
-                  ? EmptyState(
-                      title: 'Cannot read text',
-                      message: error!,
-                      action: TextButton(
-                        onPressed: () => menu('Encoding'),
-                        child: const Text('Choose encoding'),
-                      ),
-                    )
-                  : TextField(
-                      controller: controller,
-                      focusNode: focus,
-                      undoController: undo,
-                      scrollController: scroll,
-                      readOnly: !editing,
-                      expands: true,
-                      maxLines: null,
-                      minLines: null,
-                      keyboardType: TextInputType.multiline,
-                      textAlignVertical: TextAlignVertical.top,
-                      style: TextStyle(
-                        fontFamily: editing ? 'monospace' : null,
-                        fontSize: fontSize,
-                        height: 1.5,
-                      ),
-                      decoration: const InputDecoration(
-                        contentPadding: EdgeInsets.all(14),
-                        border: InputBorder.none,
-                      ),
-                    ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
       bottomNavigationBar: SafeArea(

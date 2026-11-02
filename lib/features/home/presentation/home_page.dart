@@ -96,6 +96,23 @@ class _ExplorerHomeState extends State<ExplorerHome>
       });
       if (mounted && request == countGeneration && counts != null) {
         setState(() => categoryCounts = Map<String, dynamic>.from(counts));
+        try {
+          final downloaded = await Native.rows('list', {
+            'path': '$primary/Download',
+            'hidden': widget.settings.hidden,
+          });
+          if (mounted && request == countGeneration) {
+            setState(
+              () => categoryCounts['Download'] = downloaded
+                  .where((e) => e['directory'] != true)
+                  .length,
+            );
+          }
+        } catch (_) {
+          if (mounted && request == countGeneration) {
+            setState(() => categoryCounts['Download'] = 0);
+          }
+        }
       }
     } catch (_) {
       /* Keep unavailable counts as a dash. */
@@ -105,9 +122,8 @@ class _ExplorerHomeState extends State<ExplorerHome>
   Future<void> push(Widget page) async {
     await Navigator.push(
       context,
-      MaterialPageRoute<void>(builder: (_) => page),
+      ExplorerPageRoute<void>(builder: (_) => page),
     );
-    refresh();
   }
 
   void browse(
@@ -211,9 +227,19 @@ class _ExplorerHomeState extends State<ExplorerHome>
                                   ('Documents', 'document'),
                                   ('Compressed', 'Archives'),
                                   ('APP', 'app'),
+                                  ('Download', 'download'),
+                                  ('Recent', 'history'),
                                 ])
                                   _entry(e.$1, e.$2, () {
-                                    if (e.$1 == 'APP') {
+                                    if (e.$1 == 'Download') {
+                                      browse('$primary/Download');
+                                    } else if (e.$1 == 'Recent') {
+                                      browse(
+                                        primary,
+                                        recent: true,
+                                        title: 'Recent',
+                                      );
+                                    } else if (e.$1 == 'APP') {
                                       sessionTool('apps');
                                     } else {
                                       browse(
@@ -236,27 +262,6 @@ class _ExplorerHomeState extends State<ExplorerHome>
                       ),
                     ),
                     const SizedBox(height: 10),
-                    _shortcutSection('Local', [
-                      _bookmark(
-                        'Home',
-                        Icons.home_outlined,
-                        () => browse(primary),
-                      ),
-                      _bookmark(
-                        'Download',
-                        Icons.download_outlined,
-                        () => browse('$primary/Download'),
-                      ),
-                      for (final volume in volumes)
-                        _bookmark(
-                          volume['removable'] == true
-                              ? volume['name']
-                              : 'sdcard',
-                          Icons.sd_storage_outlined,
-                          () => browse(volume['path']),
-                        ),
-                    ]),
-                    const SizedBox(height: 10),
                     _shortcutSection('Tools', [
                       _bookmark(
                         'SD Card Analyst',
@@ -274,58 +279,6 @@ class _ExplorerHomeState extends State<ExplorerHome>
                         () => sessionTool('trash'),
                       ),
                     ]),
-                    const SizedBox(height: 10),
-                    _shortcutSection('Bookmarks', [
-                      _bookmark(
-                        'Download',
-                        Icons.download_outlined,
-                        () => browse('$primary/Download'),
-                      ),
-                      _bookmark(
-                        'Documents',
-                        Icons.description_outlined,
-                        () => browse(
-                          primary,
-                          category: 'Documents',
-                          title: 'Documents',
-                        ),
-                      ),
-                      _bookmark(
-                        'Movies',
-                        Icons.movie_outlined,
-                        () => browse(
-                          primary,
-                          category: 'Videos',
-                          title: 'Movies',
-                        ),
-                      ),
-                      _bookmark(
-                        'Recent',
-                        Icons.history,
-                        () => browse(primary, recent: true, title: 'Recent'),
-                      ),
-                      _bookmark(
-                        'Music',
-                        Icons.music_note_outlined,
-                        () =>
-                            browse(primary, category: 'Music', title: 'Music'),
-                      ),
-                      _bookmark(
-                        'Images',
-                        Icons.image_outlined,
-                        () => browse(
-                          primary,
-                          category: 'Images',
-                          title: 'Images',
-                        ),
-                      ),
-                      for (final path in widget.settings.favorites)
-                        _bookmark(
-                          baseName(path),
-                          Icons.folder_outlined,
-                          () => browse(path),
-                        ),
-                    ], initiallyExpanded: true),
                     const SizedBox(height: 10),
                     _shortcutSection('Network', [
                       _bookmark(
@@ -352,6 +305,11 @@ class _ExplorerHomeState extends State<ExplorerHome>
                         'Bluetooth',
                         Icons.bluetooth,
                         () => sessionTool('bluetooth'),
+                      ),
+                      _bookmark(
+                        'Download Manager',
+                        Icons.downloading_outlined,
+                        () => sessionTool('downloads'),
                       ),
                       _bookmark(
                         'Net Manager',
@@ -504,12 +462,16 @@ class _ExplorerHomeState extends State<ExplorerHome>
             borderRadius: BorderRadius.circular(12),
           ),
           child: Icon(
-            categoryIcons[title == 'Movies'
-                    ? 'Videos'
-                    : title == 'Compressed'
-                    ? 'Archives'
-                    : title] ??
-                Icons.android_rounded,
+            title == 'Download'
+                ? Icons.download_outlined
+                : title == 'Recent'
+                ? Icons.history
+                : categoryIcons[title == 'Movies'
+                          ? 'Videos'
+                          : title == 'Compressed'
+                          ? 'Archives'
+                          : title] ??
+                      Icons.android_rounded,
             color: primaryBlue,
             size: 22,
           ),
@@ -527,14 +489,17 @@ class _ExplorerHomeState extends State<ExplorerHome>
           ),
         ),
         const SizedBox(height: 4),
-        Text(
-          '${categoryCounts[title == 'Movies'
-                  ? 'Videos'
-                  : title == 'Compressed'
-                  ? 'Archives'
-                  : title] ?? '—'}',
-          style: const TextStyle(fontSize: 11, color: Colors.grey),
-        ),
+        if (title == 'Recent')
+          const SizedBox(height: 14)
+        else
+          Text(
+            '${categoryCounts[title == 'Movies'
+                    ? 'Videos'
+                    : title == 'Compressed'
+                    ? 'Archives'
+                    : title] ?? '—'}',
+            style: const TextStyle(fontSize: 11, color: Colors.grey),
+          ),
       ],
     ),
   );

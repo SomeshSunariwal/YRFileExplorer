@@ -86,13 +86,20 @@ Future<void> showNewExplorerWindow(BuildContext context) async {
   );
   if (choice == null || !context.mounted) return;
   final type = choice['type'] as String;
-  // Network choices are presentation-only until network work resumes.
-  if (_types.firstWhere((entry) => entry.id == type).network) return;
   final primary =
       session.volumes.where((v) => v['removable'] != true).firstOrNull?['path']
           as String? ??
       session.root;
   switch (type) {
+    case 'lan' || 'ftp' || 'bluetooth' || 'downloads':
+      session.openPage(type);
+    case 'http' || 'https':
+      session.openPage('web', url: choice['path']);
+    case 'samba':
+      session.onServer?.call({
+        'protocol': 'SMB',
+        ...choice['profile'] as Map<String, dynamic>,
+      });
     case 'file':
       session.open(choice['path'], reuse: false);
     case 'device':
@@ -137,6 +144,8 @@ class _NewWindowDialogState extends State<_NewWindowDialog> {
   final drafts = <String, String>{};
   _WindowType type = _types.first;
   String? error;
+  final typeAnchor = GlobalKey();
+  bool pickerOpen = false;
   @override
   void initState() {
     super.initState();
@@ -160,37 +169,140 @@ class _NewWindowDialogState extends State<_NewWindowDialog> {
     });
   }
 
+  Future<void> pickType() async {
+    FocusScope.of(context).unfocus();
+    if (MediaQuery.viewInsetsOf(context).bottom > 0) {
+      await Future<void>.delayed(const Duration(milliseconds: 220));
+    }
+    if (!mounted) return;
+    final anchor = typeAnchor.currentContext?.findRenderObject();
+    final overlay = Navigator.of(
+      context,
+      rootNavigator: true,
+    ).overlay?.context.findRenderObject();
+    if (anchor is! RenderBox || overlay is! RenderBox) return;
+    final rect =
+        anchor.localToGlobal(Offset.zero, ancestor: overlay) & anchor.size;
+    final below =
+        (overlay.size.height -
+                MediaQuery.paddingOf(context).bottom -
+                rect.bottom -
+                12)
+            .clamp(48.0, 240.0);
+    setState(() => pickerOpen = true);
+    final value = await showMenu<String>(
+      context: context,
+      useRootNavigator: true,
+      position: RelativeRect.fromRect(
+        Rect.fromLTWH(rect.left, rect.bottom + 6, rect.width, 0),
+        Offset.zero & overlay.size,
+      ),
+      constraints: BoxConstraints(
+        minWidth: rect.width,
+        maxWidth: rect.width,
+        maxHeight: below,
+      ),
+      menuPadding: const EdgeInsets.symmetric(vertical: 4),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      popUpAnimationStyle: AnimationStyle(
+        duration: MediaQuery.disableAnimationsOf(context)
+            ? Duration.zero
+            : const Duration(milliseconds: 180),
+        reverseDuration: const Duration(milliseconds: 120),
+        curve: Curves.easeOutCubic,
+        reverseCurve: Curves.easeInCubic,
+      ),
+      items: [
+        for (final entry in _types)
+          PopupMenuItem<String>(
+            value: entry.id,
+            height: 44,
+            child: Row(
+              children: [
+                Icon(entry.icon, size: 18, color: primaryBlue),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    entry.label,
+                    style: const TextStyle(fontSize: 14),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (entry.id == type.id)
+                  const Icon(Icons.check, size: 16, color: primaryBlue),
+              ],
+            ),
+          ),
+      ],
+    );
+    if (!mounted) return;
+    setState(() => pickerOpen = false);
+    select(value);
+  }
+
   void create() {
-    if (type.network) return;
     final value = path.text.trim();
-    if (type.needsPath &&
+    if (type.id == 'file' &&
         (value.isEmpty ||
             !ExplorerWorkspaceSession.instance.containsStoragePath(value))) {
       setState(() => error = 'Choose a folder in internal storage or SD card');
       return;
+    }
+    if (type.id == 'http' || type.id == 'https' || type.id == 'samba') {
+      final uri = Uri.tryParse(value);
+      final scheme = type.id == 'samba' ? 'smb' : type.id;
+      if (uri == null ||
+          uri.scheme != scheme ||
+          uri.host.isEmpty ||
+          uri.userInfo.isNotEmpty) {
+        setState(
+          () => error =
+              'Enter a valid $scheme:// address without embedded credentials',
+        );
+        return;
+      }
+      if (type.id == 'samba') {
+        final parts = uri.pathSegments
+            .where((part) => part.isNotEmpty)
+            .toList();
+        Navigator.pop(context, <String, dynamic>{
+          'type': type.id,
+          'profile': {
+            'host': uri.host,
+            'port': '${uri.hasPort ? uri.port : 445}',
+            'share': parts.isEmpty ? '' : parts.first,
+            'path': parts.length < 2 ? '/' : '/${parts.skip(1).join('/')}',
+            'name': uri.host,
+          },
+        });
+        return;
+      }
     }
     Navigator.pop(context, <String, dynamic>{'type': type.id, 'path': value});
   }
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+    titlePadding: const EdgeInsets.fromLTRB(18, 16, 18, 8),
+    contentPadding: const EdgeInsets.fromLTRB(18, 8, 18, 8),
     scrollable: true,
     title: Row(
       children: [
         Container(
-          padding: const EdgeInsets.all(10),
+          padding: const EdgeInsets.all(6),
           decoration: BoxDecoration(
             color: primaryBlue.withValues(alpha: .1),
             borderRadius: BorderRadius.circular(14),
           ),
-          child: const Icon(Icons.tab_outlined, color: primaryBlue, size: 24),
+          child: const Icon(Icons.tab_outlined, color: primaryBlue, size: 20),
         ),
         const SizedBox(width: 12),
         const Expanded(
           child: Text(
             'New window',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
           ),
         ),
       ],
@@ -201,62 +313,69 @@ class _NewWindowDialogState extends State<_NewWindowDialog> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Choose what to open.', style: TextStyle(fontSize: 13)),
-          const SizedBox(height: 20),
-          DropdownButtonFormField<String>(
-            initialValue: type.id,
-            isExpanded: true,
-            menuMaxHeight: 320,
-            borderRadius: BorderRadius.circular(16),
-            decoration: InputDecoration(
-              labelText: 'Type',
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
+          InkWell(
+            key: typeAnchor,
+            onTap: pickType,
+            borderRadius: BorderRadius.circular(12),
+            child: InputDecorator(
+              isFocused: pickerOpen,
+              decoration: InputDecoration(
+                labelText: 'Type',
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 12,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(type.icon, color: primaryBlue, size: 18),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      type.label,
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                  ),
+                  AnimatedRotation(
+                    turns: pickerOpen ? .5 : 0,
+                    duration: const Duration(milliseconds: 180),
+                    child: const Icon(Icons.expand_more, size: 20),
+                  ),
+                ],
               ),
             ),
-            items: [
-              for (final entry in _types)
-                DropdownMenuItem(
-                  value: entry.id,
-                  child: Row(
-                    children: [
-                      Icon(entry.icon, color: primaryBlue, size: 20),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          entry.label,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 14),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-            ],
-            onChanged: select,
           ),
           AnimatedSize(
             duration: const Duration(milliseconds: 180),
             alignment: Alignment.topCenter,
             child: type.needsPath
                 ? Padding(
-                    padding: const EdgeInsets.only(top: 16),
+                    padding: const EdgeInsets.only(top: 12),
                     child: TextField(
                       key: ValueKey(type.id),
                       controller: path,
+                      style: const TextStyle(fontSize: 14),
                       autocorrect: false,
                       enableSuggestions: false,
                       keyboardType: type.id == 'file'
                           ? TextInputType.text
                           : TextInputType.url,
                       textInputAction: TextInputAction.done,
-                      onSubmitted: type.network ? null : (_) => create(),
+                      onSubmitted: (_) => create(),
                       onChanged: (_) {
                         if (error != null) setState(() => error = null);
                       },
                       decoration: InputDecoration(
                         labelText: 'Path',
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 12,
+                        ),
                         hintText: type.hint,
                         errorText: error,
                         border: OutlineInputBorder(
@@ -267,25 +386,17 @@ class _NewWindowDialogState extends State<_NewWindowDialog> {
                   )
                 : const SizedBox(width: double.infinity),
           ),
-          if (type.network)
-            const Padding(
-              padding: EdgeInsets.only(top: 12),
-              child: Text(
-                'Network windows are currently unavailable.',
-                style: TextStyle(fontSize: 12),
-              ),
-            ),
         ],
       ),
     ),
-    actionsPadding: const EdgeInsets.fromLTRB(24, 8, 24, 20),
+    actionsPadding: const EdgeInsets.fromLTRB(14, 0, 18, 12),
     actions: [
       TextButton(
         onPressed: () => Navigator.pop(context),
         child: const Text('Cancel'),
       ),
       FilledButton.icon(
-        onPressed: type.network ? null : create,
+        onPressed: create,
         icon: const Icon(Icons.add, size: 18),
         label: const Text('Open'),
       ),

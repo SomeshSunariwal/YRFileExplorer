@@ -23,7 +23,70 @@ Future<void> showExplorerViewMenu(
         onChanged(mode, sort, descending);
       }
 
+      final theme = Theme.of(dialog);
+      final colors = theme.colorScheme;
+      final dark = theme.brightness == Brightness.dark;
+      final kind = mode.split(' ').last;
+      final size = mode.split(' ').first;
+      Widget option({
+        required String label,
+        required bool selected,
+        required VoidCallback onTap,
+        IconData? icon,
+      }) => Expanded(
+        child: Semantics(
+          selected: selected,
+          button: true,
+          child: AnimatedContainer(
+            duration: MediaQuery.disableAnimationsOf(dialog)
+                ? Duration.zero
+                : const Duration(milliseconds: 160),
+            decoration: BoxDecoration(
+              color: selected
+                  ? primaryBlue.withValues(alpha: dark ? .18 : .09)
+                  : colors.surface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: selected
+                    ? primaryBlue
+                    : colors.outlineVariant.withValues(alpha: .6),
+              ),
+            ),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: onTap,
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: icon == null ? 10 : 12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (icon != null) ...[
+                      Icon(
+                        icon,
+                        size: 23,
+                        color: selected ? primaryBlue : colors.onSurfaceVariant,
+                      ),
+                      const SizedBox(height: 6),
+                    ],
+                    Text(
+                      label,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: selected
+                            ? FontWeight.w600
+                            : FontWeight.w400,
+                        color: selected ? primaryBlue : colors.onSurface,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
       return Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         clipBehavior: Clip.antiAlias,
         child: ConstrainedBox(
           constraints: BoxConstraints(
@@ -31,103 +94,145 @@ Future<void> showExplorerViewMenu(
             maxHeight: MediaQuery.sizeOf(dialog).height * .85,
           ),
           child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Text('View', style: TextStyle(fontSize: 18)),
-                ),
-                GridView.count(
-                  crossAxisCount: 3,
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  childAspectRatio: 1.35,
-                  children: [
-                    for (final kind in ['Icon', 'List', 'Detail'])
-                      for (final size in ['Large', 'Medium', 'Small'])
-                        Semantics(
-                          selected: mode == '$size $kind',
-                          child: InkWell(
-                            onTap: () =>
-                                change('$size $kind', sort, descending),
-                            child: Container(
-                              color: mode == '$size $kind'
-                                  ? primaryBlue.withValues(alpha: .15)
-                                  : null,
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    kind == 'Icon'
-                                        ? Icons.grid_view
-                                        : kind == 'List'
-                                        ? Icons.view_list
-                                        : Icons.view_agenda_outlined,
-                                    size: size == 'Large'
-                                        ? 32
-                                        : size == 'Medium'
-                                        ? 27
-                                        : 22,
-                                    color: primaryBlue,
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    '$size $kind',
-                                    style: const TextStyle(fontSize: 11),
-                                  ),
-                                ],
-                              ),
-                            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(18, 8, 18, 18),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.tune_rounded,
+                        size: 21,
+                        color: primaryBlue,
+                      ),
+                      const SizedBox(width: 10),
+                      const Expanded(
+                        child: Text(
+                          'View',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
-                  ],
-                ),
-                const Divider(height: 1),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 8, 0),
-                  child: Row(
-                    children: [
-                      const Text(
-                        'Sort',
-                        style: TextStyle(fontWeight: FontWeight.w500),
                       ),
-                      const Spacer(),
-                      TextButton.icon(
-                        onPressed: () => change(mode, sort, !descending),
-                        icon: Icon(
-                          descending ? Icons.south : Icons.north,
-                          size: 16,
-                        ),
-                        label: Text(descending ? 'Descending' : 'Ascending'),
+                      IconButton(
+                        tooltip: 'Close view options',
+                        onPressed: () => Navigator.pop(dialog),
+                        icon: const Icon(Icons.close, size: 20),
                       ),
                     ],
                   ),
-                ),
-                Wrap(
-                  alignment: WrapAlignment.center,
-                  spacing: 4,
-                  children: [
-                    for (final name in sorts)
-                      TextButton(
-                        onPressed: () => change(
-                          mode,
-                          name,
-                          sort == name ? !descending : false,
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      option(
+                        label: 'Grid',
+                        icon: Icons.grid_view_rounded,
+                        selected: kind == 'Icon',
+                        onTap: () => change('$size Icon', sort, descending),
+                      ),
+                      const SizedBox(width: 8),
+                      option(
+                        label: 'List',
+                        icon: Icons.view_list_rounded,
+                        selected: kind == 'List',
+                        onTap: () => change('$size List', sort, descending),
+                      ),
+                      const SizedBox(width: 8),
+                      option(
+                        label: 'Details',
+                        icon: Icons.view_agenda_outlined,
+                        selected: kind == 'Detail',
+                        onTap: () => change('$size Detail', sort, descending),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Item size',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      for (final value in ['Small', 'Medium', 'Large']) ...[
+                        if (value != 'Small') const SizedBox(width: 8),
+                        option(
+                          label: value,
+                          selected: size == value,
+                          onTap: () => change('$value $kind', sort, descending),
                         ),
+                      ],
+                    ],
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.only(top: 16, bottom: 4),
+                    child: Divider(height: 1),
+                  ),
+                  Row(
+                    children: [
+                      const Expanded(
                         child: Text(
-                          name,
+                          'Sort by',
                           style: TextStyle(
-                            color: sort == name
-                                ? primaryBlue
-                                : Theme.of(dialog).colorScheme.onSurfaceVariant,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                       ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-              ],
+                      TextButton.icon(
+                        onPressed: () => change(mode, sort, !descending),
+                        icon: Icon(
+                          descending
+                              ? Icons.south_rounded
+                              : Icons.north_rounded,
+                          size: 15,
+                        ),
+                        label: Text(
+                          descending ? 'Descending' : 'Ascending',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [
+                      for (final name in sorts)
+                        ChoiceChip(
+                          label: Text(
+                            name,
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                          selected: sort == name,
+                          showCheckmark: false,
+                          selectedColor: primaryBlue.withValues(
+                            alpha: dark ? .22 : .12,
+                          ),
+                          side: BorderSide(
+                            color: sort == name
+                                ? primaryBlue
+                                : colors.outlineVariant,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          onSelected: (_) => change(
+                            mode,
+                            name,
+                            sort == name ? !descending : false,
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ),

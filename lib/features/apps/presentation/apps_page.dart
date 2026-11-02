@@ -1,3 +1,5 @@
+import 'package:yr_file_explorer/features/workspace/presentation/widgets/explorer_bottom_bar.dart';
+
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -54,9 +56,9 @@ class _AppsPageState extends State<AppsPage> with WidgetsBindingObserver {
   }
 
   String key(Json app) => app['path'];
-  Future<void> load() async {
+  Future<void> load({bool background = false}) async {
     setState(() {
-      loading = true;
+      if (!background) loading = true;
       error = null;
     });
     try {
@@ -304,7 +306,8 @@ class _AppsPageState extends State<AppsPage> with WidgetsBindingObserver {
     Widget action(IconData icon, String label, VoidCallback tap) =>
         ExplorerAction(icon: icon, label: label, onTap: busy ? () {} : tap);
     return ExplorerPane(
-      onActivate: load,
+      busy: busy,
+      onActivate: () => load(background: true),
       settings: widget.settings,
       windowId: widget.windowId,
       selecting: selected.isNotEmpty,
@@ -362,7 +365,6 @@ class _AppsPageState extends State<AppsPage> with WidgetsBindingObserver {
             ],
       body: Column(
         children: [
-          if (busy) const LinearProgressIndicator(minHeight: 2),
           if (searching)
             Padding(
               padding: const EdgeInsets.all(10),
@@ -421,7 +423,12 @@ class _AppsPageState extends State<AppsPage> with WidgetsBindingObserver {
                     onRefresh: load,
                     child: grid
                         ? GridView.builder(
-                            padding: const EdgeInsets.all(10),
+                            padding: EdgeInsets.fromLTRB(
+                              10,
+                              10,
+                              10,
+                              ExplorerBottomBar.contentBottomPadding(context),
+                            ),
                             gridDelegate:
                                 SliverGridDelegateWithFixedCrossAxisCount(
                                   crossAxisCount: explorerGridColumns(viewMode),
@@ -489,6 +496,11 @@ class _AppsPageState extends State<AppsPage> with WidgetsBindingObserver {
                             },
                           )
                         : ListView.builder(
+                            padding: EdgeInsets.only(
+                              bottom: ExplorerBottomBar.contentBottomPadding(
+                                context,
+                              ),
+                            ),
                             itemCount: visible.length,
                             itemBuilder: (_, i) {
                               final a = visible[i];

@@ -1,3 +1,4 @@
+import 'package:yr_file_explorer/features/workspace/presentation/widgets/explorer_bottom_bar.dart';
 import 'package:flutter/material.dart';
 
 import 'package:yr_file_explorer/core/models/json.dart';
@@ -31,9 +32,9 @@ class _TrashPageState extends State<TrashPage> {
     load();
   }
 
-  Future<void> load() async {
+  Future<void> load({bool background = false}) async {
     setState(() {
-      loading = true;
+      if (!background) loading = true;
       error = null;
     });
     try {
@@ -92,12 +93,13 @@ class _TrashPageState extends State<TrashPage> {
   Widget build(BuildContext context) {
     final picks = rows.where((e) => selected.contains(e['id'])).toList();
     return ExplorerPane(
+      busy: busy,
       settings: widget.settings,
       windowId: widget.windowId,
       title: Text(
         selected.isEmpty ? 'Recycle Bin' : '${selected.length}/${rows.length}',
       ),
-      onActivate: load,
+      onActivate: () => load(background: true),
       selecting: selected.isNotEmpty,
       onBack: selected.isNotEmpty
           ? () => setState(() => selected.clear())
@@ -130,7 +132,6 @@ class _TrashPageState extends State<TrashPage> {
       ],
       body: Column(
         children: [
-          if (busy) const LinearProgressIndicator(minHeight: 2),
           Expanded(
             child: loading
                 ? const Center(child: CircularProgressIndicator())
@@ -152,6 +153,9 @@ class _TrashPageState extends State<TrashPage> {
                 : RefreshIndicator(
                     onRefresh: load,
                     child: ListView.builder(
+                      padding: EdgeInsets.only(
+                        bottom: ExplorerBottomBar.contentBottomPadding(context),
+                      ),
                       itemCount: rows.length,
                       itemBuilder: (_, i) {
                         final e = rows[i];

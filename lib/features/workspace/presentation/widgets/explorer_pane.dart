@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:yr_file_explorer/features/workspace/presentation/widgets/explorer_navigation_header.dart';
 
+import 'package:yr_file_explorer/shared/widgets/progress_overlay.dart';
 import 'package:yr_file_explorer/features/workspace/presentation/widgets/workspace_page_deck.dart';
 import 'package:yr_file_explorer/features/workspace/presentation/widgets/explorer_bottom_bar.dart';
 import 'package:yr_file_explorer/core/settings/app_settings.dart';
@@ -15,7 +17,7 @@ class ExplorerPane extends StatefulWidget {
   final int? windowId;
   final Widget title, body;
   final List<Widget> actions;
-  final bool selecting, interceptBack;
+  final bool selecting, interceptBack, busy, extendBody;
   final VoidCallback? onBack, onTitle, onActivate;
   const ExplorerPane({
     super.key,
@@ -25,6 +27,8 @@ class ExplorerPane extends StatefulWidget {
     required this.body,
     required this.actions,
     this.selecting = false,
+    this.extendBody = true,
+    this.busy = false,
     this.interceptBack = false,
     this.onBack,
     this.onTitle,
@@ -79,6 +83,7 @@ class _ExplorerPaneState extends State<ExplorerPane> {
       }
     },
     child: Scaffold(
+      extendBody: widget.extendBody,
       appBar: AppBar(
         backgroundColor: explorerChrome(context),
         automaticallyImplyLeading: false,
@@ -91,59 +96,90 @@ class _ExplorerPaneState extends State<ExplorerPane> {
         ),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(explorerHeaderHeight),
-          child: ExplorerHeaderFrame(
-            separators: !widget.selecting,
-            child: Row(
-              children: [
-                IconButton(
-                  tooltip: widget.selecting ? 'Done' : 'Back',
-                  onPressed: back,
-                  icon: Icon(
-                    widget.selecting ? Icons.check : Icons.arrow_back,
-                    color: primaryBlue,
-                    size: 22,
-                  ),
-                ),
-                Expanded(
-                  child: InkWell(
-                    onTap: widget.onTitle,
-                    child: DefaultTextStyle(
-                      style: TextStyle(
-                        color: explorerForeground(context),
-                        fontSize: 14,
-                      ),
-                      child: Center(
-                        child:
-                            widget.title is ExplorerBreadcrumbs ||
-                                widget.selecting
-                            ? widget.title
-                            : ExplorerLocationPill(child: widget.title),
-                      ),
-                    ),
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'Close window',
-                  onPressed: () {
+          child: !widget.selecting
+              ? ExplorerNavigationHeader(
+                  onBack: back,
+                  onClose: () {
                     if (widget.windowId != null) {
                       session.close(widget.windowId!);
                     } else {
                       Navigator.maybePop(context);
                     }
                   },
-                  icon: const Icon(
-                    Icons.cancel_outlined,
-                    color: primaryBlue,
-                    size: 20,
+                  location: widget.title is ExplorerBreadcrumbs
+                      ? widget.title
+                      : InkWell(
+                          onTap: widget.onTitle,
+                          child: ExplorerLocationPill(
+                            child: Center(
+                              child: DefaultTextStyle(
+                                style: TextStyle(
+                                  color: explorerForeground(context),
+                                  fontSize: 14,
+                                ),
+                                child: widget.title,
+                              ),
+                            ),
+                          ),
+                        ),
+                )
+              : ExplorerHeaderFrame(
+                  separators: !widget.selecting,
+                  child: Row(
+                    children: [
+                      IconButton(
+                        tooltip: widget.selecting ? 'Done' : 'Back',
+                        onPressed: back,
+                        icon: Icon(
+                          widget.selecting ? Icons.check : Icons.arrow_back,
+                          color: primaryBlue,
+                          size: 22,
+                        ),
+                      ),
+                      Expanded(
+                        child: InkWell(
+                          onTap: widget.onTitle,
+                          child: DefaultTextStyle(
+                            style: TextStyle(
+                              color: explorerForeground(context),
+                              fontSize: 14,
+                            ),
+                            child: Center(
+                              child:
+                                  widget.title is ExplorerBreadcrumbs ||
+                                      widget.selecting
+                                  ? widget.title
+                                  : ExplorerLocationPill(child: widget.title),
+                            ),
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Close window',
+                        onPressed: () {
+                          if (widget.windowId != null) {
+                            session.close(widget.windowId!);
+                          } else {
+                            Navigator.maybePop(context);
+                          }
+                        },
+                        icon: const Icon(
+                          Icons.cancel_outlined,
+                          color: primaryBlue,
+                          size: 20,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ],
-            ),
-          ),
         ),
       ),
       body: WorkspaceBodySlide(
-        child: SafeArea(top: false, bottom: false, child: widget.body),
+        allowTabSwipe: !widget.selecting,
+        child: ExplorerProgressOverlay(
+          active: widget.busy,
+          child: SafeArea(top: false, bottom: false, child: widget.body),
+        ),
       ),
       bottomNavigationBar: ExplorerBottomBar(
         child: Row(children: widget.actions),

@@ -13,7 +13,7 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
   final form = GlobalKey<FormState>();
   final fields = <String, TextEditingController>{};
   late String protocol, encoding;
-  bool rememberPassword = false;
+  bool rememberPassword = false, implicit = false;
   bool save = true, anonymous = false, passive = true, showPassword = false;
   @override
   void initState() {
@@ -21,6 +21,7 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
     protocol = widget.profile?['protocol'] ?? 'SFTP';
     encoding = widget.profile?['encoding'] ?? 'AUTO';
     anonymous = widget.profile?['anonymous'] == true;
+    implicit = widget.profile?['implicit'] == true;
     rememberPassword = widget.profile?['rememberPassword'] == true;
     passive = widget.profile?['passive'] != false;
     for (final key in [
@@ -43,6 +44,10 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
                       ? '445'
                       : protocol == 'SFTP'
                       ? '22'
+                      : protocol == 'FTPS' && implicit
+                      ? '990'
+                      : protocol == 'WebDAV'
+                      ? '443'
                       : '21')
                 : ''),
       );
@@ -96,17 +101,28 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
           : null,
     ),
     validator: (value) {
-      if (key == 'host' && (value == null || value.trim().isEmpty)) {
-        return 'Enter server';
+      if (key == 'host') {
+        final address = value?.trim() ?? '';
+        if (address.isEmpty) return 'Enter server';
+        if (protocol == 'WebDAV') {
+          final uri = Uri.tryParse(
+            address.contains('://') ? address : 'https://$address',
+          );
+          if (uri == null ||
+              !['http', 'https'].contains(uri.scheme) ||
+              uri.host.isEmpty ||
+              uri.userInfo.isNotEmpty) {
+            return 'Enter an HTTP or HTTPS server URL';
+          }
+        } else if (address.contains('/') ||
+            address.contains('://') ||
+            address.contains(' ')) {
+          return 'Enter a hostname or IP address';
+        }
       }
       if (key == 'port') {
         final p = int.tryParse(value ?? '');
         if (p == null || p < 1 || p > 65535) return 'Use 1–65535';
-      }
-      if (key == 'share' &&
-          protocol == 'SMB' &&
-          (value == null || value.trim().isEmpty)) {
-        return 'Enter share name';
       }
       if (key == 'username' &&
           protocol != 'WebDAV' &&
@@ -119,7 +135,7 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
   );
   @override
   Widget build(BuildContext context) => AlertDialog(
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
     title: Text(
       '${widget.profile?['host'] == null ? 'New' : 'Edit'} $protocol Server',
       textAlign: TextAlign.center,
@@ -170,16 +186,35 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
                 ),
               if (protocol == 'SMB')
                 row('Domain', field('domain', 'Optional domain')),
-              if (protocol == 'SMB') row('Share', field('share', 'Share name')),
+              if (protocol == 'SMB')
+                row('Share', field('share', 'Optional — browse shares')),
               row('Username', field('username', 'Username')),
               row('Password', field('password', 'Password', secret: true)),
-              if (['FTP', 'FTPS'].contains(protocol))
+              if (protocol == 'FTPS')
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  title: const Text(
+                    'Implicit TLS',
+                    style: TextStyle(fontSize: 13),
+                  ),
+                  subtitle: const Text(
+                    'Port 990; otherwise explicit TLS on port 21',
+                    style: TextStyle(fontSize: 11),
+                  ),
+                  value: implicit,
+                  onChanged: (value) => setState(() {
+                    implicit = value;
+                    fields['port']!.text = value ? '990' : '21';
+                  }),
+                ),
+              if (['FTP', 'FTPS', 'SMB'].contains(protocol))
                 CheckboxListTile(
                   contentPadding: const EdgeInsets.only(left: 76),
                   dense: true,
                   controlAffinity: ListTileControlAffinity.leading,
-                  title: const Text(
-                    'Anonymous',
+                  title: Text(
+                    protocol == 'SMB' ? 'Guest access' : 'Anonymous',
                     style: TextStyle(fontSize: 13),
                   ),
                   value: anonymous,
@@ -260,11 +295,14 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
             'protocol': protocol,
             'encoding': encoding,
             'passive': passive,
+            'implicit': implicit,
             'anonymous': anonymous,
             'username': anonymous
-                ? 'anonymous'
+                ? (protocol == 'SMB' ? '' : 'anonymous')
                 : fields['username']!.text.trim(),
-            'password': anonymous ? 'anonymous@' : fields['password']!.text,
+            'password': anonymous
+                ? (protocol == 'SMB' ? '' : 'anonymous@')
+                : fields['password']!.text,
             'save': save,
             'rememberPassword': rememberPassword && save,
             'name': fields['name']!.text.trim().isEmpty

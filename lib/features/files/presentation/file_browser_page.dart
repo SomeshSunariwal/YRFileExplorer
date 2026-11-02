@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'package:yr_file_explorer/shared/widgets/progress_overlay.dart';
 import 'package:yr_file_explorer/features/workspace/presentation/widgets/explorer_navigation_header.dart';
 import 'package:yr_file_explorer/features/workspace/presentation/widgets/workspace_page_deck.dart';
 import 'package:yr_file_explorer/features/workspace/presentation/widgets/explorer_bottom_bar.dart';
@@ -10,7 +11,6 @@ import 'package:yr_file_explorer/core/settings/app_settings.dart';
 import 'package:yr_file_explorer/core/theme/explorer_style.dart';
 import 'package:yr_file_explorer/core/theme/file_categories.dart';
 import 'package:yr_file_explorer/core/utils/file_format.dart';
-import 'package:yr_file_explorer/features/analysis/presentation/storage_analysis_page.dart';
 import 'package:yr_file_explorer/features/archives/presentation/archive_page.dart';
 import 'package:yr_file_explorer/features/editor/presentation/text_editor_page.dart';
 import 'package:yr_file_explorer/features/files/application/file_clipboard.dart';
@@ -23,6 +23,7 @@ import 'package:yr_file_explorer/features/workspace/presentation/widgets/segment
 import 'package:yr_file_explorer/shared/dialogs/input_dialogs.dart';
 import 'package:yr_file_explorer/shared/dialogs/view_menu.dart';
 import 'package:yr_file_explorer/shared/widgets/breadcrumbs.dart';
+import 'package:yr_file_explorer/shared/widgets/drag_selection_region.dart';
 import 'package:yr_file_explorer/shared/widgets/empty_state.dart';
 import 'package:yr_file_explorer/shared/widgets/file_glyph.dart';
 
@@ -54,9 +55,12 @@ class _FileBrowserState extends State<FileBrowser> with WidgetsBindingObserver {
   late bool previousHidden, previousFolderSizes;
   List<Json> entries = [];
   final selected = <String>{};
+  final selectionKeys = <String, GlobalKey>{};
+  final filesScroll = ScrollController();
   final history = <String>[];
   final future = <String>[];
   bool loading = true,
+      refreshing = false,
       calculating = false,
       searching = false,
       deepSearch = false;
@@ -84,6 +88,9 @@ class _FileBrowserState extends State<FileBrowser> with WidgetsBindingObserver {
     ExplorerWorkspaceSession.instance.addListener(workspaceChanged);
     if (widget.windowId != null && widget.category == null && !widget.recent) {
       ExplorerWorkspaceSession.instance.pasteActions[widget.windowId!] = paste;
+      ExplorerWorkspaceSession.instance.localNavigationActions[widget
+              .windowId!] =
+          openLocation;
     }
     load();
   }
@@ -102,7 +109,7 @@ class _FileBrowserState extends State<FileBrowser> with WidgetsBindingObserver {
   void workspaceChanged() {
     final active =
         ExplorerWorkspaceSession.instance.activeId == widget.windowId;
-    if (active && !wasActive) load();
+    if (active && !wasActive) load(background: true);
     wasActive = active;
   }
 
@@ -129,16 +136,21 @@ class _FileBrowserState extends State<FileBrowser> with WidgetsBindingObserver {
     widget.clipboard.removeListener(changed);
     ExplorerWorkspaceSession.instance.removeListener(workspaceChanged);
     ExplorerWorkspaceSession.instance.pasteActions.remove(widget.windowId);
+    ExplorerWorkspaceSession.instance.localNavigationActions.remove(
+      widget.windowId,
+    );
     searchController.dispose();
+    filesScroll.dispose();
     Native.call('cancelAnalysis', {'id': scanId});
     super.dispose();
   }
 
-  Future<void> load() async {
+  Future<void> load({bool background = false}) async {
     final version = ++generation;
     Native.call('cancelAnalysis', {'id': scanId});
     setState(() {
-      loading = true;
+      if (!background) loading = true;
+      refreshing = background;
       calculating = false;
       error = null;
       selected.clear();
@@ -171,6 +183,7 @@ class _FileBrowserState extends State<FileBrowser> with WidgetsBindingObserver {
       setState(() {
         entries = rows;
         loading = false;
+        refreshing = false;
       });
       if (widget.settings.folderSizes && !virtual) {
         await calculate(version);
@@ -179,6 +192,7 @@ class _FileBrowserState extends State<FileBrowser> with WidgetsBindingObserver {
       if (mounted && version == generation) {
         setState(() {
           loading = false;
+          refreshing = false;
           error = e is PlatformException ? e.message : e.toString();
         });
       }
@@ -304,11 +318,32 @@ class _FileBrowserState extends State<FileBrowser> with WidgetsBindingObserver {
     );
   }
 
+  void openLocation(String next, bool startSearch) {
+    final hadQuery = query.isNotEmpty || deepSearch;
+    searching = startSearch;
+    query = '';
+    deepSearch = false;
+    searchController.clear();
+    selected.clear();
+    if (next != path) {
+      navigate(next);
+    } else {
+      setState(() {});
+      if (hadQuery) load();
+    }
+  }
+
   void navigate(String next) {
     final session = ExplorerWorkspaceSession.instance;
     next = session.storagePath(next);
     if (!session.containsStoragePath(next)) return;
     if (next == path) return;
+    // Retain one return sequence when breadcrumbs revisit the same folders.
+    // Repeating sdcard -> Download -> sdcard must not grow the stack forever.
+    final previousVisit = history.lastIndexOf(path);
+    if (previousVisit >= 0) {
+      history.removeRange(previousVisit, history.length);
+    }
     history.add(path);
     future.clear();
     path = next;
@@ -346,7 +381,16 @@ class _FileBrowserState extends State<FileBrowser> with WidgetsBindingObserver {
         ExplorerWorkspaceSession.instance.containsStoragePath(
           parentPath(path),
         )) {
-      navigate(parentPath(path));
+      // Moving up after history is exhausted must not push this folder back
+      // onto history, otherwise Back would bounce between child and parent.
+      path = parentPath(path);
+      future.clear();
+      if (widget.windowId != null) {
+        ExplorerWorkspaceSession.instance.updatePath(widget.windowId!, path);
+      }
+      query = '';
+      searchController.clear();
+      load();
     } else {
       goHome();
     }
@@ -373,7 +417,7 @@ class _FileBrowserState extends State<FileBrowser> with WidgetsBindingObserver {
         }
         Navigator.push(
           context,
-          MaterialPageRoute<void>(
+          ExplorerPageRoute<void>(
             builder: (_) => FileBrowser(
               path: e['path'],
               settings: widget.settings,
@@ -394,7 +438,7 @@ class _FileBrowserState extends State<FileBrowser> with WidgetsBindingObserver {
           !p.toLowerCase().endsWith('.svg')) {
         await Navigator.push(
           context,
-          MaterialPageRoute<void>(
+          ExplorerPageRoute<void>(
             builder: (_) => ImageViewer(
               path: p,
               recycle: widget.settings.recycle,
@@ -418,7 +462,7 @@ class _FileBrowserState extends State<FileBrowser> with WidgetsBindingObserver {
           ).hasMatch(p)) {
         await Navigator.push(
           context,
-          MaterialPageRoute<void>(builder: (_) => TextEditor(path: p)),
+          ExplorerPageRoute<void>(builder: (_) => TextEditor(path: p)),
         );
         await load();
       } else if (p.toLowerCase().endsWith('.zip')) {
@@ -431,7 +475,7 @@ class _FileBrowserState extends State<FileBrowser> with WidgetsBindingObserver {
         } else {
           await Navigator.push(
             context,
-            MaterialPageRoute<void>(
+            ExplorerPageRoute<void>(
               builder: (_) => ArchivePage(
                 path: p,
                 settings: widget.settings,
@@ -503,24 +547,12 @@ class _FileBrowserState extends State<FileBrowser> with WidgetsBindingObserver {
     }
   }
 
-  void analyze([String? target]) => Navigator.push(
-    context,
-    MaterialPageRoute<void>(
-      builder: (_) => AnalysisPage(
-        path: target ?? path,
-        onBrowse: (p) => Navigator.push(
-          context,
-          MaterialPageRoute<void>(
-            builder: (_) => FileBrowser(
-              path: p,
-              settings: widget.settings,
-              clipboard: widget.clipboard,
-            ),
-          ),
-        ),
-      ),
-    ),
+  void analyze([String? target]) => ExplorerWorkspaceSession.instance.open(
+    target ?? path,
+    page: 'storage_analysis',
+    title: 'Storage Analyzer',
   );
+
   Future<void> action(String action, List<Json> rows) async {
     if (rows.isEmpty) return;
     final paths = rows.map((e) => e['path'] as String).toList(),
@@ -938,166 +970,200 @@ class _FileBrowserState extends State<FileBrowser> with WidgetsBindingObserver {
           ),
           bottom: PreferredSize(
             preferredSize: const Size.fromHeight(explorerHeaderHeight),
-            child: ExplorerHeaderFrame(
-              separators: false,
-              child: searching
-                  ? searchHeader()
-                  : selected.isNotEmpty
-                  ? Row(
-                      children: [
-                        IconButton(
-                          tooltip: 'Done',
-                          onPressed: () => setState(() => selected.clear()),
-                          icon: const Icon(Icons.check, color: primaryBlue),
-                        ),
-                        Text(
-                          '${selected.length}/${entries.length}',
-                          style: TextStyle(
-                            color: explorerForeground(context),
-                            fontSize: 18,
+            child: searching || selected.isNotEmpty
+                ? ExplorerHeaderFrame(
+                    separators: false,
+                    child: searching
+                        ? searchHeader()
+                        : Row(
+                            children: [
+                              IconButton(
+                                tooltip: 'Done',
+                                onPressed: () =>
+                                    setState(() => selected.clear()),
+                                icon: const Icon(
+                                  Icons.check,
+                                  color: primaryBlue,
+                                ),
+                              ),
+                              Text(
+                                '${selected.length}/${entries.length}',
+                                style: TextStyle(
+                                  color: explorerForeground(context),
+                                  fontSize: 18,
+                                ),
+                              ),
+                              const Spacer(),
+                              IconButton(
+                                tooltip: 'Select all',
+                                onPressed: () => setState(
+                                  () => selected.addAll(
+                                    entries.map((e) => e['path'] as String),
+                                  ),
+                                ),
+                                icon: const Icon(
+                                  Icons.select_all,
+                                  color: primaryBlue,
+                                ),
+                              ),
+                              IconButton(
+                                tooltip: 'Clear selection',
+                                onPressed: () =>
+                                    setState(() => selected.clear()),
+                                icon: const Icon(
+                                  Icons.deselect,
+                                  color: primaryBlue,
+                                ),
+                              ),
+                            ],
                           ),
-                        ),
-                        const Spacer(),
-                        IconButton(
-                          tooltip: 'Select all',
-                          onPressed: () => setState(
-                            () => selected.addAll(
-                              entries.map((e) => e['path'] as String),
+                  )
+                : ExplorerNavigationHeader(
+                    onBack: back,
+                    onClose: () {
+                      if (widget.windowId != null) {
+                        ExplorerWorkspaceSession.instance.close(
+                          widget.windowId!,
+                        );
+                      } else {
+                        Navigator.maybePop(context);
+                      }
+                    },
+                    location: query.isNotEmpty
+                        ? InkWell(
+                            onTap: () => showStorageLocations(
+                              context,
+                              onSelect: navigate,
                             ),
-                          ),
-                          icon: const Icon(
-                            Icons.select_all,
-                            color: primaryBlue,
-                          ),
-                        ),
-                        IconButton(
-                          tooltip: 'Clear selection',
-                          onPressed: () => setState(() => selected.clear()),
-                          icon: const Icon(Icons.deselect, color: primaryBlue),
-                        ),
-                      ],
-                    )
-                  : ExplorerNavigationHeader(
-                      onBack: back,
-                      onClose: () {
-                        if (widget.windowId != null) {
-                          ExplorerWorkspaceSession.instance.close(
-                            widget.windowId!,
-                          );
-                        } else {
-                          Navigator.maybePop(context);
-                        }
-                      },
-                      location: query.isNotEmpty
-                          ? InkWell(
-                              onTap: () => showStorageLocations(
-                                context,
-                                onSelect: navigate,
-                              ),
-                              child: const ExplorerLocationPill(
-                                child: Center(child: Text('Search Result')),
-                              ),
-                            )
-                          : breadcrumbs(),
-                    ),
-            ),
+                            child: const ExplorerLocationPill(
+                              child: Center(child: Text('Search Result')),
+                            ),
+                          )
+                        : breadcrumbs(),
+                  ),
           ),
         ),
-        body: WorkspaceBodySlide(
-          child: SafeArea(
-            top: false,
-            bottom: false,
-            child: Column(
-              children: [
-                if (calculating) const LinearProgressIndicator(minHeight: 2),
-                Expanded(
-                  child: loading
-                      ? const Center(child: CircularProgressIndicator())
-                      : error != null
-                      ? EmptyState(
-                          icon: Icons.lock_outline,
-                          title: 'Cannot open folder',
-                          message: error!,
-                          action: FilledButton(
-                            onPressed: load,
-                            child: const Text('Retry'),
-                          ),
-                        )
-                      : rows.isEmpty
-                      ? EmptyState(
-                          title: virtual ? 'No matching files' : 'Empty folder',
-                          message: virtual
-                              ? 'Try a different search or category.'
-                              : 'Create a folder or paste files here.',
-                        )
-                      : RefreshIndicator(
-                          onRefresh: load,
-                          child: widget.settings.grid
-                              ? GridView.builder(
-                                  padding: EdgeInsets.fromLTRB(
-                                    12,
-                                    14,
-                                    12,
-                                    ExplorerBottomBar.contentBottomPadding(
-                                      context,
-                                    ),
-                                  ),
-                                  gridDelegate:
-                                      SliverGridDelegateWithFixedCrossAxisCount(
-                                        crossAxisCount:
-                                            widget.settings.viewMode.startsWith(
-                                              'Large',
-                                            )
-                                            ? 3
-                                            : widget.settings.viewMode
-                                                  .startsWith('Small')
-                                            ? 5
-                                            : 4,
-                                        childAspectRatio: .84,
-                                        crossAxisSpacing: 8,
-                                        mainAxisSpacing: 8,
-                                      ),
-                                  itemCount: rows.length,
-                                  itemBuilder: (_, i) => _grid(rows[i]),
-                                )
-                              : ListView.builder(
-                                  padding: EdgeInsets.only(
-                                    bottom:
+        body: ExplorerProgressOverlay(
+          active: refreshing || calculating,
+          child: WorkspaceBodySlide(
+            allowTabSwipe: selected.isEmpty,
+            child: SafeArea(
+              top: false,
+              bottom: false,
+              child: Column(
+                children: [
+                  Expanded(
+                    child: loading
+                        ? const Center(child: CircularProgressIndicator())
+                        : error != null
+                        ? EmptyState(
+                            icon: Icons.lock_outline,
+                            title: 'Cannot open folder',
+                            message: error!,
+                            action: FilledButton(
+                              onPressed: load,
+                              child: const Text('Retry'),
+                            ),
+                          )
+                        : rows.isEmpty
+                        ? EmptyState(
+                            title: virtual
+                                ? 'No matching files'
+                                : 'Empty folder',
+                            message: virtual
+                                ? 'Try a different search or category.'
+                                : 'Create a folder or paste files here.',
+                          )
+                        : DragSelectionRegion(
+                            enabled: selected.isNotEmpty,
+                            itemKeys: selectionKeys,
+                            scroll: filesScroll,
+                            isSelected: selected.contains,
+                            onSelection: (p, value) => setState(() {
+                              value ? selected.add(p) : selected.remove(p);
+                            }),
+                            child: RefreshIndicator(
+                              onRefresh: () => load(background: true),
+                              child: widget.settings.grid
+                                  ? GridView.builder(
+                                      controller: filesScroll,
+                                      physics: selected.isNotEmpty
+                                          ? const NeverScrollableScrollPhysics()
+                                          : null,
+                                      padding: EdgeInsets.fromLTRB(
+                                        12,
+                                        14,
+                                        12,
                                         ExplorerBottomBar.contentBottomPadding(
                                           context,
                                         ),
-                                  ),
-                                  itemCount: rows.length,
-                                  itemBuilder: (_, i) => _row(rows[i]),
-                                ),
-                        ),
-                ),
-                if (virtual && entries.length >= (widget.recent ? 200 : 10000))
-                  Padding(
-                    padding: const EdgeInsets.all(6),
-                    child: Text(
-                      'Showing the first ${entries.length} results',
-                      style: const TextStyle(fontSize: 11),
-                    ),
+                                      ),
+                                      gridDelegate:
+                                          SliverGridDelegateWithFixedCrossAxisCount(
+                                            crossAxisCount:
+                                                widget.settings.viewMode
+                                                    .startsWith('Large')
+                                                ? 3
+                                                : widget.settings.viewMode
+                                                      .startsWith('Small')
+                                                ? 5
+                                                : 4,
+                                            childAspectRatio: .84,
+                                            crossAxisSpacing: 8,
+                                            mainAxisSpacing: 8,
+                                          ),
+                                      itemCount: rows.length,
+                                      itemBuilder: (_, i) => selectionItem(
+                                        rows[i],
+                                        _grid(rows[i]),
+                                      ),
+                                    )
+                                  : ListView.builder(
+                                      controller: filesScroll,
+                                      physics: selected.isNotEmpty
+                                          ? const NeverScrollableScrollPhysics()
+                                          : null,
+                                      padding: EdgeInsets.only(
+                                        bottom:
+                                            ExplorerBottomBar.contentBottomPadding(
+                                              context,
+                                            ),
+                                      ),
+                                      itemCount: rows.length,
+                                      itemBuilder: (_, i) =>
+                                          selectionItem(rows[i], _row(rows[i])),
+                                    ),
+                            ),
+                          ),
                   ),
-                if (query.isNotEmpty && !deepSearch && !loading)
-                  SizedBox(
-                    width: double.infinity,
-                    child: TextButton(
-                      style: TextButton.styleFrom(
-                        backgroundColor: Theme.of(context)
-                            .colorScheme
-                            .surfaceContainerHighest,
-                        shape: const RoundedRectangleBorder(),
+                  if (virtual &&
+                      entries.length >= (widget.recent ? 200 : 10000))
+                    Padding(
+                      padding: const EdgeInsets.all(6),
+                      child: Text(
+                        'Showing the first ${entries.length} results',
+                        style: const TextStyle(fontSize: 11),
                       ),
-                      onPressed: () {
-                        deepSearch = true;
-                        load();
-                      },
-                      child: const Text('File not found? Try deeper search'),
                     ),
-                  ),
-              ],
+                  if (query.isNotEmpty && !deepSearch && !loading)
+                    SizedBox(
+                      width: double.infinity,
+                      child: TextButton(
+                        style: TextButton.styleFrom(
+                          backgroundColor: Theme.of(context)
+                              .colorScheme
+                              .surfaceContainerHighest,
+                          shape: const RoundedRectangleBorder(),
+                        ),
+                        onPressed: () {
+                          deepSearch = true;
+                          load();
+                        },
+                        child: const Text('File not found? Try deeper search'),
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
         ),
@@ -1165,7 +1231,11 @@ class _FileBrowserState extends State<FileBrowser> with WidgetsBindingObserver {
                   children: [
                     _tool(Icons.add, 'New', showNewMenu),
                     _tool(Icons.search, 'Search', openSearch),
-                    _tool(Icons.refresh, 'Refresh', load),
+                    _tool(
+                      Icons.refresh,
+                      'Refresh',
+                      () => load(background: true),
+                    ),
                     _tool(Icons.grid_view, 'View', showViewMenu),
                     _tool(Icons.filter_none, 'Windows', showWindows),
                   ],
@@ -1377,64 +1447,102 @@ class _FileBrowserState extends State<FileBrowser> with WidgetsBindingObserver {
             style: const TextStyle(fontSize: 11, color: Colors.grey),
           )
         : null,
-    trailing: PopupMenuButton<String>(
-      tooltip: 'File actions',
-      onSelected: (v) => action(v, [e]),
-      itemBuilder: (_) =>
-          actions(e)
-              .map((a) => PopupMenuItem(value: a, child: Text(a)))
-              .toList(),
-    ),
+    trailing: selected.isNotEmpty
+        ? Checkbox(
+            value: selected.contains(e['path']),
+            onChanged: (_) => toggle(e['path']),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(5),
+            ),
+          )
+        : PopupMenuButton<String>(
+            tooltip: 'File actions',
+            onSelected: (v) => action(v, [e]),
+            itemBuilder: (_) =>
+                actions(e)
+                    .map((a) => PopupMenuItem(value: a, child: Text(a)))
+                    .toList(),
+          ),
     onLongPress: () => toggle(e['path']),
     onTap: () => open(e),
   );
-  Widget _grid(Json e) => InkWell(
-    onLongPress: () => toggle(e['path']),
-    onTap: () => open(e),
-    child: Container(
-      decoration: BoxDecoration(
-        color: selected.contains(e['path'])
-            ? primaryBlue.withValues(alpha: .12)
-            : null,
-        borderRadius: BorderRadius.circular(14),
-      ),
-      padding: const EdgeInsets.all(5),
-      child: Column(
-        children: [
-          Expanded(
-            child: Center(
-              child: FileGlyph(
-                e,
-                size: widget.settings.viewMode.startsWith('Large')
-                    ? 76
-                    : widget.settings.viewMode.startsWith('Small')
-                    ? 44
-                    : 60,
-              ),
+  Widget selectionItem(Json e, Widget child) => KeyedSubtree(
+    key: selectionKeys.putIfAbsent(e['path'] as String, () => GlobalKey()),
+    child: child,
+  );
+
+  Widget _grid(Json e) => Stack(
+    children: [
+      Positioned.fill(
+        child: InkWell(
+          onLongPress: () => toggle(e['path']),
+          onTap: () => open(e),
+          child: Container(
+            decoration: BoxDecoration(
+              color: selected.contains(e['path'])
+                  ? primaryBlue.withValues(alpha: .12)
+                  : null,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            padding: const EdgeInsets.all(5),
+            child: Column(
+              children: [
+                Expanded(
+                  child: Center(
+                    child: FileGlyph(
+                      e,
+                      size: widget.settings.viewMode.startsWith('Large')
+                          ? 76
+                          : widget.settings.viewMode.startsWith('Small')
+                          ? 44
+                          : 60,
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  height: widget.settings.viewMode.startsWith('Small')
+                      ? 32
+                      : 36,
+                  child: Text(
+                    e['name'],
+                    maxLines: 2,
+                    textAlign: TextAlign.center,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: widget.settings.viewMode.startsWith('Small')
+                          ? 11
+                          : widget.settings.viewMode.startsWith('Large')
+                          ? 13
+                          : 12,
+                      fontWeight: FontWeight.w500,
+                      height: 1.2,
+                      color: Theme.of(context).colorScheme.onSurface,
+                      fontStyle: FontStyle.normal,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
-          SizedBox(
-            height: widget.settings.viewMode.startsWith('Small') ? 32 : 36,
-            child: Text(
-              e['name'],
-              maxLines: 2,
-              textAlign: TextAlign.center,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: widget.settings.viewMode.startsWith('Small')
-                    ? 11
-                    : widget.settings.viewMode.startsWith('Large')
-                    ? 13
-                    : 12,
-                fontWeight: FontWeight.w500,
-                height: 1.2,
-                color: Theme.of(context).colorScheme.onSurface,
-                fontStyle: FontStyle.normal,
+        ),
+      ),
+      if (selected.isNotEmpty)
+        Positioned(
+          top: 0,
+          right: 0,
+          child: SizedBox(
+            width: 40,
+            height: 40,
+            child: Checkbox(
+              value: selected.contains(e['path']),
+              onChanged: (_) => toggle(e['path']),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(5),
               ),
+              visualDensity: VisualDensity.compact,
             ),
           ),
-        ],
-      ),
-    ),
+        ),
+    ],
   );
 }

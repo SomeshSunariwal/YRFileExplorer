@@ -3,7 +3,7 @@
 Flutter Android application with a native Java file engine. Open and run **this directory** as the Flutter project; there is no nested Flutter application or backend server.
 
 - Application: **YR File Explorer**
-- Package: **com.explorer.fileexplorer**
+- Package: **com.somesh.yrfileexplorer**
 - Minimum: **Android 12 / API 31**
 - Compile and target: **API 37**
 - Flutter SDK used: **3.47.8 stable**, Dart **3.13.7**
@@ -55,15 +55,23 @@ Browser folder sizes are calculated in the background and can be disabled in Set
 
 Local/removable-storage browsing, grid/list/detail views, sorting, hidden files, multi-selection, search, create, rename, copy, move, share, favorites, properties, SHA-256 checksums, Recycle Bin and restore, AES-encrypted ZIP creation/extraction, password-encrypted individual files, image zoom, UTF-8 text editing, native audio/video playback, Android APK installation, and app inventory/backup/uninstall.
 
-The workspace preserves open local/category tabs and switches them through a segmented top strip with horizontal content slides and fixed headers. The active tab shows its name, inactive tabs show icons, and new tabs slide into the far-right end. Local, Tools, Bookmarks and Network are Homepage cards. The sidebar has been removed; Homepage settings are available through the bottom Settings action; the Homepage header has no side icons. Images, Music, Movies, Documents, Compressed and APP share one equal-width category row above storage. Windows opens a centered floating panel with Windows/Clipboard tabs, preview cards, open-tab count, New, Default, and Close others. Each preview card has a Home action to choose its default startup tab; the selected local tab reopens on launch. Windows → New opens a nested type dropdown while retaining the Windows panel underneath. Only HTTP, File (Local), HTTPS and Samba show Path. Network choices in this dialog are UI-only with Open disabled until network work resumes. Tapping Homepage or a storage title opens History with detected storage volumes and recent folders; folder headers show the last three path segments. The full-width Homepage location contracts as local Back/Close controls enter from the sides, and expands on return. Ancestor clicks stay within the selected internal storage or SD card; device-root navigation is not offered. New Window starts at the current folder.
+The workspace preserves local, category, tool and user-requested network tabs. App pages use the same horizontal slide transition; the active top tab shows its title and inactive tabs show icons. Local folders reuse the last Home window. Homepage shows six category icons followed by Download (with a file count) and Recent (without a count) on the next row, then storage volumes, Tools and Network. The old sidebar, Local card and Bookmarks card are removed. Floating bottom navigation leaves underlying content visible and scrollables reserve clearance for their final item.
 
-FTP/SFTP/FTPS connections are explicitly available. Saved profiles exclude plaintext passwords. The optional Remember password setting stores encrypted credentials using Android Keystore; SFTP requires fingerprint verification. Network permission is enabled for these user-configured connections. Ads, tracking, cloud accounts, recommendations, and the floating gesture shortcut are excluded from the UI.
+SD Card Analyst has proportional row fills, selection, copy/cut/delete and a narrow floating red/green capacity bar above navigation. Storage Analyzer is a workspace tab with summary statistics and icon tiles for large files, recently modified items, empty folders and duplicate detection; each shortcut opens a dedicated results tab with inspection and selection actions. Folder scans use a separate cancellable progress dialog, keeping the existing page underneath and committing the new folder only after a successful scan. The duplicate Space usage section is removed. Windows has a clipped Windows/Clipboard selector, screenshot previews, New and Close others; each card's Home icon chooses a startup tab. New opens a nested dialog while retaining Windows underneath.
+
+## Network implementation
+
+User-configured FTP (active/passive), explicit/implicit FTPS, SFTP with host-key verification, SMB share discovery/browsing and HTTP/HTTPS WebDAV provide listing, recursive download/upload, mkdir, rename, server-folder copy/move and deletion. Existing destinations are refused. Profiles support editing/removal, guest/anonymous access and optional Android-Keystore password storage; plaintext passwords are excluded from saved profiles and startup windows. LAN discovery is user-triggered, cancellable and bounded to the current local subnet (at most 254 addresses). Bluetooth supports Android pairing/permissions, discovery, system sharing and OBEX file browsing where the peer supports it. Net Manager shows connection details and opens Android Wi-Fi/hotspot controls.
+
+HTTP/HTTPS addresses open web tabs with navigation, progress, authentication prompts, certificate verification and download handoff. Download Manager tracks Android-managed jobs, progress/completion, cancellation, retry, opening and history removal. Only the final HTTP, File, HTTPS and Samba choices in Windows → New show Path. All network choices are enabled. Android 17's local-network permission is requested at runtime; Android 12–16 do not receive that newer permission prompt. Cloud, Remote Manager, ads, analytics, recommendations and the floating gesture shortcut remain excluded.
+
+Network runtime validation is **pending**: source analysis and Java compilation were completed, but this session's sandbox denied loopback socket connections and automatic approval review hit an account usage limit. Successful protocol transfers, TLS behavior and Android 12/17 emulator flows must still be verified before calling the network work complete. Bluetooth validation is limited to UI/permissions until a compatible physical peer is available, per the user's instruction.
 
 ## Scope and original-APK inspection
 
 The current behavior reference is the supplied **ES File Explorer 3.2.3** running on Android 5.1. Captures of the original interactions are under `analysis/screenshots/es-3.2.3/`. The YR interface keeps the navigation placement with modern cards and a centered window switcher. Its Java file engine is independent; complete feature parity is still not established. Newer 4.2.x APK inspection artifacts are retained separately.
 
-See [FEATURES.md](analysis/FEATURES.md) for the implemented scope and remaining differences, and [TRACKERS.md](analysis/TRACKERS.md) for components found in the original APK.
+Original-APK audit reports and captures are local inspection artifacts and are excluded from the GitHub source package.
 
 Android blocks other apps' private storage, most Android/data and Android/obb content, silent installation/uninstallation and other privileged operations. All-files permission does not bypass these restrictions.
 
@@ -77,11 +85,9 @@ Android blocks other apps' private storage, most Android/data and Android/obb co
 
 Validation uses Dart analysis, Android builds and manual emulator checks. No automated test suites are included.
 
-`tools/emulator-smoke.py` is an optional UI smoke test **for a disposable emulator**. It installs no third-party APK, creates a 22-byte fixture under Downloads, navigates YR, and records screenshots. Do not run it against a personal device without reviewing it first.
-
 ## Dependencies and distribution
 
-Direct native library versions were checked against Maven Central on 2026-10-31: Zip4j 2.11.6, Commons Net 3.13.0, JSch 2.28.8, SMBJ 0.15.0 and OkHttp 5.5.1. AGP is 9.5.0. Flutter has no third-party runtime Dart packages. SDK-pinned transitive Dart versions are retained for Flutter compatibility. The development-only package named `leak_tracker` detects memory leaks during Flutter tests; it is not analytics and is not shipped in the release app.
+Direct native library versions were checked against Maven Central on 2026-10-31: Zip4j 2.11.6, Commons Net 3.13.0, JSch 2.28.8, SMBJ 0.15.0, SMBJ-RPC 0.12.13 and OkHttp 5.5.1. AGP is 9.5.0. Flutter has no third-party runtime Dart packages. SDK-pinned transitive Dart versions are retained for Flutter compatibility. The development-only package named `leak_tracker` detects memory leaks during Flutter tests; it is not analytics and is not shipped in the release app.
 
 Release builds currently use the local **development signing key**. Configure your private release keystore before distributing through a store. Broad storage/package permissions are used for the file manager and App Manager and need the appropriate store declarations if you publish.
 
@@ -94,9 +100,7 @@ Release builds currently use the local **development signing key**. Configure yo
 | `lib/core/` | Native bridge, settings, models, styling and formatting |
 | `lib/shared/` | Reusable dialogs and widgets |
 | `lib/features/` | Feature pages, feature widgets and application state |
-| `android/app/src/main/java/com/explorer/fileexplorer/` | Native engines grouped into Java packages by responsibility |
+| `android/app/src/main/java/com/somesh/yrfileexplorer/` | Native engines grouped into Java packages by responsibility |
 | `assets/` | Runtime icons and visual assets |
-| `tools/` | Development and inspection utilities |
-| `analysis/` | Original-APK evidence, review reports and screenshots |
 
-See [Architecture](docs/ARCHITECTURE.md) for the detailed layout and placement rules.
+The GitHub source package keeps application source, runtime assets, Flutter/Gradle configuration and wrapper files, dependency lockfiles, and maintained project documentation. Local SDK paths, build output, caches, APK inspection material and private signing files are excluded.
