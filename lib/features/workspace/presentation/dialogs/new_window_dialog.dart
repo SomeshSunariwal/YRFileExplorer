@@ -1,3 +1,4 @@
+import 'package:yr_file_explorer/shared/dialogs/explorer_dialog.dart';
 import 'package:flutter/material.dart';
 
 import 'package:yr_file_explorer/core/models/json.dart';
@@ -22,7 +23,6 @@ class _WindowType {
 
 const _types = [
   _WindowType('device', 'Device', Icons.phone_android_outlined),
-  _WindowType('sdcard', 'Sdcard', Icons.sd_storage_outlined),
   _WindowType('images', 'Images', Icons.image_outlined),
   _WindowType('music', 'Music', Icons.music_note_outlined),
   _WindowType('movies', 'Movies', Icons.movie_outlined),
@@ -39,7 +39,7 @@ const _types = [
     Icons.downloading_outlined,
     network: true,
   ),
-  _WindowType('analysis', 'SD Card Analyst', Icons.pie_chart_outline),
+  _WindowType('analysis', 'Storage Analyzer', Icons.pie_chart_outline),
   _WindowType('trash', 'Recycle Bin', Icons.delete_outline),
   _WindowType(
     'http',
@@ -101,16 +101,11 @@ Future<void> showNewExplorerWindow(BuildContext context) async {
         ...choice['profile'] as Map<String, dynamic>,
       });
     case 'file':
-      session.open(choice['path'], reuse: false);
+      session.open(choice['path']);
     case 'device':
-      session.open(primary, reuse: false);
-    case 'sdcard':
-      final volume = session.volumes
-          .where((v) => v['removable'] == true)
-          .firstOrNull;
-      session.open(volume?['path'] ?? primary, reuse: false);
+      session.open(primary);
     case 'download':
-      session.open('$primary/Download', reuse: false);
+      session.open('$primary/Download');
     case 'images' || 'music' || 'movies' || 'documents' || 'archives':
       final (category, title) = switch (type) {
         'images' => ('Images', 'Images'),
@@ -119,16 +114,11 @@ Future<void> showNewExplorerWindow(BuildContext context) async {
         'documents' => ('Documents', 'Documents'),
         _ => ('Archives', 'Compressed'),
       };
-      session.open(primary, category: category, title: title, reuse: false);
+      session.open(primary, category: category, title: title);
     case 'analysis':
-      session.open(
-        initial,
-        page: 'analysis',
-        title: 'SD Card Analyst',
-        reuse: false,
-      );
+      session.open(initial, page: 'analysis', title: 'Storage Analyzer');
     case 'apps' || 'trash':
-      session.openPage(type, reuse: false);
+      session.openPage(type);
   }
 }
 
@@ -203,7 +193,6 @@ class _NewWindowDialogState extends State<_NewWindowDialog> {
         maxHeight: below,
       ),
       menuPadding: const EdgeInsets.symmetric(vertical: 4),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       popUpAnimationStyle: AnimationStyle(
         duration: MediaQuery.disableAnimationsOf(context)
             ? Duration.zero
@@ -283,30 +272,9 @@ class _NewWindowDialogState extends State<_NewWindowDialog> {
   }
 
   @override
-  Widget build(BuildContext context) => AlertDialog(
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-    titlePadding: const EdgeInsets.fromLTRB(18, 16, 18, 8),
+  Widget build(BuildContext context) => ExplorerDialog(
     contentPadding: const EdgeInsets.fromLTRB(18, 8, 18, 8),
-    scrollable: true,
-    title: Row(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(6),
-          decoration: BoxDecoration(
-            color: primaryBlue.withValues(alpha: .1),
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: const Icon(Icons.tab_outlined, color: primaryBlue, size: 20),
-        ),
-        const SizedBox(width: 12),
-        const Expanded(
-          child: Text(
-            'New window',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-          ),
-        ),
-      ],
-    ),
+    title: const Text('New window'),
     content: SizedBox(
       width: 360,
       child: Column(
@@ -325,9 +293,6 @@ class _NewWindowDialogState extends State<_NewWindowDialog> {
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: 12,
                   vertical: 12,
-                ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
                 ),
               ),
               child: Row(
@@ -378,9 +343,6 @@ class _NewWindowDialogState extends State<_NewWindowDialog> {
                         ),
                         hintText: type.hint,
                         errorText: error,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
                       ),
                     ),
                   )
@@ -389,7 +351,6 @@ class _NewWindowDialogState extends State<_NewWindowDialog> {
         ],
       ),
     ),
-    actionsPadding: const EdgeInsets.fromLTRB(14, 0, 18, 12),
     actions: [
       TextButton(
         onPressed: () => Navigator.pop(context),

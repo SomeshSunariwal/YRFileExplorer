@@ -1,3 +1,5 @@
+import 'package:yr_file_explorer/core/utils/file_sort.dart';
+import 'package:yr_file_explorer/shared/dialogs/operation_progress_dialog.dart';
 import 'package:yr_file_explorer/features/workspace/presentation/widgets/explorer_bottom_bar.dart';
 import 'package:flutter/material.dart';
 
@@ -38,7 +40,7 @@ class _TrashPageState extends State<TrashPage> {
       error = null;
     });
     try {
-      final r = await Native.rows('trash');
+      final r = foldersFirst(await Native.rows('trash'));
       if (mounted) {
         setState(() {
           rows = r;
@@ -72,13 +74,20 @@ class _TrashPageState extends State<TrashPage> {
         )) {
       return;
     }
+    if (!mounted) return;
     setState(() => busy = true);
     try {
-      for (final e in picks) {
-        await Native.call(action == 'restore' ? 'restore' : 'deleteTrash', {
-          'id': e['id'],
-        });
-      }
+      await runFileOperation(
+        context,
+        action == 'restore' ? 'Restoring files…' : 'Deleting files…',
+        () async {
+          for (final e in picks) {
+            await Native.call(action == 'restore' ? 'restore' : 'deleteTrash', {
+              'id': e['id'],
+            });
+          }
+        },
+      );
       selected.clear();
       await load();
     } catch (e) {
@@ -101,6 +110,9 @@ class _TrashPageState extends State<TrashPage> {
       ),
       onActivate: () => load(background: true),
       selecting: selected.isNotEmpty,
+      onSelectAll: () =>
+          setState(() => selected.addAll(rows.map((e) => e['id'] as String))),
+      onClearSelection: () => setState(() => selected.clear()),
       onBack: selected.isNotEmpty
           ? () => setState(() => selected.clear())
           : null,

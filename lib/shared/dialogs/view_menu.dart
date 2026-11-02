@@ -1,3 +1,4 @@
+import 'package:yr_file_explorer/shared/dialogs/explorer_dialog.dart';
 import 'package:flutter/material.dart';
 
 import 'package:yr_file_explorer/core/theme/file_categories.dart';
@@ -85,10 +86,10 @@ Future<void> showExplorerViewMenu(
           ),
         ),
       );
-      return Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        clipBehavior: Clip.antiAlias,
-        child: ConstrainedBox(
+      return ExplorerDialog(
+        title: const Text('View'),
+        contentPadding: EdgeInsets.zero,
+        content: ConstrainedBox(
           constraints: BoxConstraints(
             maxWidth: 360,
             maxHeight: MediaQuery.sizeOf(dialog).height * .85,
@@ -100,30 +101,6 @@ Future<void> showExplorerViewMenu(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.tune_rounded,
-                        size: 21,
-                        color: primaryBlue,
-                      ),
-                      const SizedBox(width: 10),
-                      const Expanded(
-                        child: Text(
-                          'View',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        tooltip: 'Close view options',
-                        onPressed: () => Navigator.pop(dialog),
-                        icon: const Icon(Icons.close, size: 20),
-                      ),
-                    ],
-                  ),
                   const SizedBox(height: 8),
                   Row(
                     children: [
@@ -254,8 +231,10 @@ double explorerGlyphSize(String mode) => mode.startsWith('Large')
 
 Future<String?> showExplorerActionMenu(
   BuildContext context,
-  List<String> names,
-) {
+  List<String> names, {
+  Rect? anchor,
+  bool isFavorite = false,
+}) {
   const icons = <String, IconData>{
     'Hide': Icons.visibility_off_outlined,
     'Unhide': Icons.visibility_outlined,
@@ -274,41 +253,91 @@ Future<String?> showExplorerActionMenu(
     'Copy path': Icons.link,
     'Save to Downloads': Icons.download_outlined,
   };
-  return showMenu<String>(
+  final reducedMotion = MediaQuery.disableAnimationsOf(context);
+  return showGeneralDialog<String>(
     context: context,
-    constraints: const BoxConstraints(minWidth: 220, maxWidth: 280),
-    positionBuilder: (context, constraints) {
-      final media = MediaQuery.of(context);
-      final bottom = 80 + media.padding.bottom;
-      final available = constraints.maxHeight - bottom - media.padding.top - 76;
-      final height = (names.length * 44.0 + 16).clamp(
-        0.0,
-        available.clamp(0.0, double.infinity),
-      );
-      return RelativeRect.fromLTRB(
-        constraints.maxWidth - 240,
-        constraints.maxHeight - bottom - height,
-        8,
-        bottom,
-      );
-    },
-    items: [
-      for (final name in names)
-        PopupMenuItem<String>(
-          value: name,
-          height: 44,
-          child: Row(
-            children: [
-              Icon(
-                icons[name] ?? Icons.more_horiz,
-                size: 20,
-                color: primaryBlue,
+    barrierDismissible: true,
+    barrierColor: Colors.transparent,
+    barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
+    transitionDuration: reducedMotion
+        ? Duration.zero
+        : const Duration(milliseconds: 220),
+    pageBuilder: (menuContext, animation, _) => LayoutBuilder(
+      builder: (context, constraints) {
+        final media = MediaQuery.of(context);
+        final bottom = anchor == null
+            ? 80.0 + media.viewPadding.bottom
+            : (constraints.maxHeight - anchor.top + 8).clamp(
+                media.viewPadding.bottom + 8,
+                constraints.maxHeight,
+              );
+        final right = anchor == null
+            ? 12.0
+            : (constraints.maxWidth - anchor.right).clamp(
+                12.0,
+                (constraints.maxWidth - 24).clamp(12.0, double.infinity),
+              );
+        final available =
+            (constraints.maxHeight - bottom - media.padding.top - 16).clamp(
+              0.0,
+              double.infinity,
+            );
+        return Stack(
+          children: [
+            Positioned(
+              // Shadow padding is outside the visible menu. Offset it back
+              // so it does not become an extra gap above the toolbar.
+              right: (right - 16).clamp(0.0, double.infinity),
+              bottom: (bottom - 16).clamp(0.0, double.infinity),
+              width: (constraints.maxWidth - 24).clamp(0.0, 256.0),
+              child: SizeTransition(
+                alignment: Alignment.bottomCenter,
+                sizeFactor: animation.drive(
+                  CurveTween(curve: Curves.easeOutCubic),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: (available - 16).clamp(0.0, double.infinity),
+                    ),
+                    child: Material(
+                      color: Theme.of(context).colorScheme.surface,
+                      surfaceTintColor: Colors.transparent,
+                      elevation: 3,
+                      borderRadius: BorderRadius.circular(12),
+                      clipBehavior: Clip.antiAlias,
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        itemCount: names.length,
+                        itemBuilder: (context, i) => ListTile(
+                          minTileHeight: 44,
+                          leading: Icon(
+                            names[i] == 'Favorite' && isFavorite
+                                ? Icons.star_rounded
+                                : icons[names[i]] ?? Icons.more_horiz,
+                            size: 20,
+                            color: names[i] == 'Favorite' && isFavorite
+                                ? const Color(0xffffc107)
+                                : primaryBlue,
+                          ),
+                          title: Text(
+                            names[i],
+                            style: const TextStyle(fontSize: 14),
+                          ),
+                          onTap: () => Navigator.pop(menuContext, names[i]),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               ),
-              const SizedBox(width: 14),
-              Expanded(child: Text(name)),
-            ],
-          ),
-        ),
-    ],
+            ),
+          ],
+        );
+      },
+    ),
+    transitionBuilder: (context, animation, _, child) => child,
   );
 }

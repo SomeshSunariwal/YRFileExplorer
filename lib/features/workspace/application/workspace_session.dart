@@ -60,14 +60,32 @@ class ExplorerWindow {
           ? categoryIcons[category] ?? Icons.folder_outlined
           : recent
           ? Icons.history
-          : Icons.home_outlined,
+          : ExplorerWorkspaceSession.instance.volumeFor(path)?['removable'] ==
+                true
+          ? Icons.sd_storage_outlined
+          : Icons.phone_android_outlined,
   };
   String get tabLabel =>
       page == 'files' && profile == null && category == null && !recent
-      ? 'Home'
+      ? _storageLabel
       : label;
-  String get label =>
-      title ?? (path == '/storage/emulated/0' ? 'Home' : baseName(path));
+  String get _storageLabel {
+    final volume = ExplorerWorkspaceSession.instance.volumeFor(path);
+    return volume?['removable'] == true ? volume!['name'] as String : 'Device';
+  }
+
+  String get label => switch (page) {
+    'analysis' => 'Storage Analyzer',
+    'storage_analysis' => 'Folder Analysis',
+    _ =>
+      page == 'files' &&
+              profile == null &&
+              category == null &&
+              !recent &&
+              ExplorerWorkspaceSession.instance.volumeFor(path)?['path'] == path
+          ? _storageLabel
+          : title ?? baseName(path),
+  };
 }
 
 class ExplorerWorkspaceSession extends ChangeNotifier {
@@ -77,6 +95,11 @@ class ExplorerWorkspaceSession extends ChangeNotifier {
   List<Json> servers = [];
   final homePreviewKey = GlobalKey();
   final Map<int?, Uint8List> previews = {};
+  final previewChanges = ValueNotifier<int>(0);
+  late final Listenable windowChanges = Listenable.merge([
+    this,
+    previewChanges,
+  ]);
   final Map<int, Future<void> Function()> pasteActions = {};
   final Map<int, void Function(String path, bool search)>
   localNavigationActions = {};
@@ -90,7 +113,7 @@ class ExplorerWorkspaceSession extends ChangeNotifier {
   void clipboardChanged() => notifyListeners();
   void setPreview(int? id, Uint8List bytes) {
     previews[id] = bytes;
-    notifyListeners();
+    previewChanges.value++;
   }
 
   void remember(String path) {
@@ -207,7 +230,7 @@ class ExplorerWorkspaceSession extends ChangeNotifier {
     path = storagePath(path);
     final roots = volumes.isEmpty
         ? <Json>[
-            {'path': root, 'name': 'sdcard', 'removable': false},
+            {'path': root, 'name': 'Device', 'removable': false},
           ]
         : volumes;
     return (List<Json>.of(roots)..sort(
@@ -228,7 +251,7 @@ class ExplorerWorkspaceSession extends ChangeNotifier {
     var current = volume['path'] as String;
     final crumbs = <(String, String)>[
       (
-        volume['removable'] == true ? volume['name'] as String : 'sdcard',
+        volume['removable'] == true ? volume['name'] as String : 'Device',
         current,
       ),
     ];
@@ -248,6 +271,29 @@ class ExplorerWorkspaceSession extends ChangeNotifier {
   int get count => windows.length + 1;
   int get activeIndex =>
       activeId == null ? 0 : windows.indexWhere((w) => w.id == activeId) + 1;
+  // Tab names are unique. Keep the last opened matching window and its state,
+  // even if its folder or analysis path has changed since it was opened.
+  bool _activateExisting(ExplorerWindow requested) {
+    final name = requested.tabLabel.trim().toLowerCase();
+    final matches = windows
+        .where((window) => window.tabLabel.trim().toLowerCase() == name)
+        .toList();
+    if (matches.isEmpty) return false;
+    final existing = matches.last;
+    final removed = matches.take(matches.length - 1).map((w) => w.id).toSet();
+    if (removed.isNotEmpty) {
+      windows.removeWhere((w) => removed.contains(w.id));
+      previews.removeWhere((id, _) => removed.contains(id));
+      pasteActions.removeWhere((id, _) => removed.contains(id));
+      localNavigationActions.removeWhere((id, _) => removed.contains(id));
+      if (removed.contains(_defaultWindowId)) _defaultWindowId = existing.id;
+      if (removed.contains(latestOpenedId)) latestOpenedId = existing.id;
+      if (removed.contains(previousActiveId)) previousActiveId = null;
+    }
+    activate(existing.id);
+    return true;
+  }
+
   void open(
     String path, {
     String page = 'files',
@@ -255,7 +301,6 @@ class ExplorerWorkspaceSession extends ChangeNotifier {
     String? title,
     bool recent = false,
     bool search = false,
-    bool reuse = true,
     Json? payload,
   }) {
     path = storagePath(path);
@@ -286,22 +331,8 @@ class ExplorerWorkspaceSession extends ChangeNotifier {
         return;
       }
     }
-    if (reuse) {
-      for (final window in windows) {
-        if (window.page == page &&
-            window.profile == null &&
-            window.path == path &&
-            window.category == category &&
-            window.recent == recent &&
-            window.search == search) {
-          window.payload = payload ?? window.payload;
-          activate(window.id);
-          return;
-        }
-      }
-    }
     final window = ExplorerWindow(
-      ++_nextId,
+      _nextId + 1,
       path,
       page: page,
       category: category,
@@ -310,6 +341,8 @@ class ExplorerWorkspaceSession extends ChangeNotifier {
       search: search,
       payload: payload,
     );
+    if (_activateExisting(window)) return;
+    _nextId++;
     lastSwitchWasSwipe = false;
     beforeSwitch?.call();
     windows.add(window);
@@ -320,20 +353,9 @@ class ExplorerWorkspaceSession extends ChangeNotifier {
     notifyListeners();
   }
 
-  void openPage(String page, {bool reuse = true, String? url}) {
-    lastSwitchWasSwipe = false;
-    for (final window in windows) {
-      if (reuse &&
-          window.page == page &&
-          (page != 'web' || window.url == url)) {
-        window.url = url ?? window.url;
-        activate(window.id);
-        return;
-      }
-    }
-    beforeSwitch?.call();
+  void openPage(String page, {String? url}) {
     final window = ExplorerWindow(
-      ++_nextId,
+      _nextId + 1,
       root,
       page: page,
       url: url,
@@ -348,11 +370,15 @@ class ExplorerWorkspaceSession extends ChangeNotifier {
         'bluetooth' => 'Bluetooth',
         'netmanager' => 'Net Manager',
         'trash' => 'Recycle Bin',
-        'analysis' => 'SD Card Analyst',
-        'storage_analysis' => 'Storage Analyzer',
+        'analysis' => 'Storage Analyzer',
+        'storage_analysis' => 'Folder Analysis',
         _ => page,
       },
     );
+    if (_activateExisting(window)) return;
+    _nextId++;
+    lastSwitchWasSwipe = false;
+    beforeSwitch?.call();
     windows.add(window);
     latestOpenedId = window.id;
     previousActiveId = activeId;
@@ -362,11 +388,13 @@ class ExplorerWorkspaceSession extends ChangeNotifier {
 
   void openRemote(Json profile) {
     final window = ExplorerWindow(
-      ++_nextId,
+      _nextId + 1,
       profile['path'] ?? '/',
       title: profile['name'] ?? profile['host'],
       profile: Map<String, dynamic>.of(profile),
     );
+    if (_activateExisting(window)) return;
+    _nextId++;
     lastSwitchWasSwipe = false;
     beforeSwitch?.call();
     windows.add(window);

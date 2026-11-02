@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:yr_file_explorer/features/analysis/domain/analysis_snapshot.dart';
+
 import 'widgets/analysis_progress_dialog.dart';
 
 import 'package:flutter/material.dart';
@@ -13,7 +15,6 @@ import 'package:yr_file_explorer/core/utils/file_format.dart';
 import 'package:yr_file_explorer/features/analysis/presentation/widgets/storage_ring_painter.dart';
 import 'package:yr_file_explorer/features/storage/presentation/dialogs/storage_locations_dialog.dart';
 import 'package:yr_file_explorer/features/workspace/application/workspace_session.dart';
-import 'package:yr_file_explorer/shared/dialogs/input_dialogs.dart';
 import 'package:yr_file_explorer/shared/widgets/breadcrumbs.dart';
 import 'package:yr_file_explorer/shared/widgets/empty_state.dart';
 import 'package:yr_file_explorer/features/workspace/presentation/widgets/explorer_bottom_bar.dart';
@@ -26,11 +27,9 @@ class AnalysisPage extends StatefulWidget {
   final String path;
   final int? windowId;
   final AppSettings? settings;
-  final void Function(String path)? onBrowse;
   const AnalysisPage({
     super.key,
     required this.path,
-    this.onBrowse,
     this.windowId,
     this.settings,
   });
@@ -41,13 +40,13 @@ class AnalysisPage extends StatefulWidget {
 class _AnalysisPageState extends State<AnalysisPage> {
   late String path;
   final pathHistory = <String>[];
-  Json? result;
+  AnalysisSnapshot? snapshot;
+  Json? get result => snapshot?.data;
   final progressDialog = AnalysisProgressDialog();
   String? error;
-  bool scanning = true, duplicateScan = false;
-  String id = '', filter = 'All', sort = 'Size';
+  bool scanning = true;
+  String id = '';
   StreamSubscription<Json>? subscription;
-  final selected = <String>{};
 
   @override
   void initState() {
@@ -61,11 +60,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
     });
   }
 
-  Future<void> scan({
-    bool duplicates = false,
-    String? target,
-    bool goingBack = false,
-  }) async {
+  Future<void> scan({String? target, bool goingBack = false}) async {
     if (scanning && id.isNotEmpty) return;
     final next = target ?? path;
     final previous = id;
@@ -78,8 +73,6 @@ class _AnalysisPageState extends State<AnalysisPage> {
       id = job;
       scanning = true;
       error = null;
-      duplicateScan = duplicates;
-      selected.clear();
     });
     if (widget.windowId == null ||
         ExplorerWorkspaceSession.instance.activeId == widget.windowId) {
@@ -94,7 +87,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
       final r = await Native.call<Map>('analyze', {
         'path': next,
         'id': job,
-        'duplicates': duplicates,
+        'duplicates': false,
       });
       if (mounted && id == job) {
         setState(() {
@@ -110,7 +103,7 @@ class _AnalysisPageState extends State<AnalysisPage> {
             }
             path = next;
           }
-          result = Map<String, dynamic>.from(r!);
+          snapshot = AnalysisSnapshot(Map<String, dynamic>.from(r!));
           scanning = false;
         });
         if (widget.windowId != null) {
@@ -148,17 +141,13 @@ class _AnalysisPageState extends State<AnalysisPage> {
     } else {
       Navigator.push(
         context,
-        ExplorerPageRoute<void>(
-          builder: (_) => AnalysisPage(path: next, onBrowse: widget.onBrowse),
-        ),
+        ExplorerPageRoute<void>(builder: (_) => AnalysisPage(path: next)),
       );
     }
   }
 
   void back() {
-    if (selected.isNotEmpty) {
-      setState(() => selected.clear());
-    } else if (pathHistory.isNotEmpty) {
+    if (pathHistory.isNotEmpty) {
       scan(target: pathHistory.last, goingBack: true);
     } else {
       final session = ExplorerWorkspaceSession.instance;
@@ -169,53 +158,6 @@ class _AnalysisPageState extends State<AnalysisPage> {
             ? previous
             : null,
       );
-    }
-  }
-
-  List<Json> get children {
-    final rows = jsonRows(result?['children'])
-        .where(
-          (e) =>
-              filter == 'All' ||
-              (filter == 'Folders'
-                  ? e['directory'] == true
-                  : e['directory'] != true),
-        )
-        .toList();
-    rows.sort(
-      (a, b) => switch (sort) {
-        'Name' => a['name'].toString().toLowerCase().compareTo(
-          b['name'].toString().toLowerCase(),
-        ),
-        'Files' => ((b['files'] ?? 0) as num).compareTo(
-          (a['files'] ?? 0) as num,
-        ),
-        'Folders' => ((b['folders'] ?? 0) as num).compareTo(
-          (a['folders'] ?? 0) as num,
-        ),
-        _ => ((b['size'] ?? 0) as num).compareTo((a['size'] ?? 0) as num),
-      },
-    );
-    return rows;
-  }
-
-  Future<void> removeSelection() async {
-    if (!await confirm(
-      context,
-      'Move to Recycle Bin?',
-      '${selected.length} selected items will be moved to the Recycle Bin.',
-      action: 'Move',
-    )) {
-      return;
-    }
-    try {
-      await Native.call('delete', {
-        'paths': selected.toList(),
-        'permanent': false,
-      });
-      await scan();
-    } catch (e) {
-      if (mounted) showError(context, e);
     }
   }
 
@@ -243,38 +185,26 @@ class _AnalysisPageState extends State<AnalysisPage> {
           extendBody: true,
           settings: widget.settings!,
           windowId: widget.windowId,
-          selecting: selected.isNotEmpty,
           interceptBack: pathHistory.isNotEmpty,
           onBack: back,
-          title: selected.isNotEmpty
-              ? Text('${selected.length} selected')
-              : ExplorerBreadcrumbs(
-                  entries: [
-                    for (final crumb
-                        in ExplorerWorkspaceSession.instance.breadcrumbsFor(
-                          path,
-                        ))
-                      (
-                        crumb.$2 ==
-                                ExplorerWorkspaceSession.instance.volumeFor(
-                                  path,
-                                )?['path']
-                            ? 'Storage Analyzer'
-                            : crumb.$1,
-                        crumb.$2,
-                      ),
-                  ],
-                  onNavigate: drill,
-                  onCurrent: () =>
-                      showStorageLocations(context, onSelect: drill),
+          title: ExplorerBreadcrumbs(
+            entries: [
+              for (final crumb
+                  in ExplorerWorkspaceSession.instance.breadcrumbsFor(path))
+                (
+                  crumb.$2 ==
+                          ExplorerWorkspaceSession.instance.volumeFor(
+                            path,
+                          )?['path']
+                      ? 'Folder Analysis'
+                      : crumb.$1,
+                  crumb.$2,
                 ),
+            ],
+            onNavigate: drill,
+            onCurrent: () => showStorageLocations(context, onSelect: drill),
+          ),
           actions: [
-            if (selected.isNotEmpty && result?['provider'] != true)
-              ExplorerAction(
-                icon: Icons.delete_outline,
-                label: 'Delete',
-                onTap: removeSelection,
-              ),
             ExplorerAction(
               icon: Icons.copy_outlined,
               label: 'Copy report',
@@ -317,19 +247,9 @@ class _AnalysisPageState extends State<AnalysisPage> {
             titleSpacing: 0,
             title: Transform.translate(
               offset: const Offset(-11, 0),
-              child: Text(
-                selected.isEmpty
-                    ? 'Storage Analyzer'
-                    : '${selected.length} selected',
-              ),
+              child: const Text('Folder Analysis'),
             ),
             actions: [
-              if (selected.isNotEmpty && result?['provider'] != true)
-                IconButton(
-                  tooltip: 'Move to Recycle Bin',
-                  onPressed: removeSelection,
-                  icon: const Icon(Icons.delete_outline),
-                ),
               IconButton(
                 tooltip: 'Copy report',
                 onPressed: scanning ? null : export,
@@ -514,32 +434,16 @@ class _AnalysisPageState extends State<AnalysisPage> {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    toolTile(
-                      'Large files',
-                      Icons.insert_drive_file_outlined,
-                      jsonRows(r['largest'])
-                          .where((e) => (e['size'] as num) >= 10 * 1024 * 1024)
-                          .toList(),
-                    ),
-                    toolTile(
-                      'Recently modified',
-                      Icons.history,
-                      jsonRows(r['recent']),
-                    ),
-                    toolTile(
-                      'Empty folders',
-                      Icons.folder_off_outlined,
-                      jsonRows(r['empty']),
-                    ),
-                    if (r['provider'] != true)
-                      toolTile(
-                        'Duplicate files',
-                        Icons.copy_all_outlined,
-                        r['duplicatesScanned'] == true
-                            ? duplicateRows(r)
-                            : null,
-                        duplicates: true,
-                      ),
+                    for (final kind in AnalysisKind.values)
+                      if (kind != AnalysisKind.duplicates ||
+                          r['provider'] != true)
+                        toolTile(
+                          kind,
+                          kind == AnalysisKind.duplicates &&
+                                  r['duplicatesScanned'] != true
+                              ? null
+                              : snapshot!.rows(kind),
+                        ),
                   ],
                 ),
               ),
@@ -550,38 +454,15 @@ class _AnalysisPageState extends State<AnalysisPage> {
     );
   }
 
-  List<Json> duplicateRows(Json data) => [
-    for (final group in jsonRows(data['duplicates']))
-      for (final item in group['paths'] as List)
-        {
-          'name': baseName(item.toString()),
-          'path': item.toString(),
-          'size': group['size'],
-          'directory': false,
-        },
-  ];
-
-  Widget toolTile(
-    String title,
-    IconData icon,
-    List<Json>? items, {
-    bool duplicates = false,
-  }) => Expanded(
+  Widget toolTile(AnalysisKind kind, List<Json>? items) => Expanded(
     child: InkWell(
       borderRadius: BorderRadius.circular(14),
       onTap: () {
-        final kind = duplicates
-            ? 'duplicates'
-            : title == 'Large files'
-            ? 'large'
-            : title == 'Empty folders'
-            ? 'empty'
-            : 'recent';
         ExplorerWorkspaceSession.instance.open(
           path,
           page: 'analysis_results',
-          category: kind,
-          title: title,
+          category: kind.id,
+          title: kind.title,
           payload: items == null ? null : {'rows': items},
         );
       },
@@ -596,13 +477,22 @@ class _AnalysisPageState extends State<AnalysisPage> {
                 color: primaryBlue.withValues(alpha: .09),
                 borderRadius: BorderRadius.circular(13),
               ),
-              child: Icon(icon, color: primaryBlue, size: 23),
+              child: Icon(
+                switch (kind) {
+                  AnalysisKind.large => Icons.insert_drive_file_outlined,
+                  AnalysisKind.recent => Icons.history,
+                  AnalysisKind.empty => Icons.folder_off_outlined,
+                  AnalysisKind.duplicates => Icons.copy_all_outlined,
+                },
+                color: primaryBlue,
+                size: 23,
+              ),
             ),
             const SizedBox(height: 7),
             SizedBox(
               height: 30,
               child: Text(
-                title,
+                kind.title,
                 textAlign: TextAlign.center,
                 maxLines: 2,
                 style: const TextStyle(

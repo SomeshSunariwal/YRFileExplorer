@@ -1,3 +1,6 @@
+import 'package:yr_file_explorer/core/utils/file_sort.dart';
+import 'package:yr_file_explorer/shared/dialogs/explorer_dialog.dart';
+import 'package:yr_file_explorer/shared/widgets/explorer_search_header.dart';
 import 'package:yr_file_explorer/features/workspace/presentation/widgets/explorer_bottom_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -173,13 +176,11 @@ class _RemoteBrowserState extends State<RemoteBrowser> {
       error = null;
     });
     try {
-      final r = jsonRows(await request('list'));
-      r.sort((a, b) {
-        if (a['directory'] != b['directory']) {
-          return a['directory'] == true ? -1 : 1;
-        }
-        return a['name'].toString().compareTo(b['name'].toString());
-      });
+      final r = sortedFileEntries(
+        jsonRows(await request('list')),
+        sort: 'Name',
+        descending: false,
+      );
       if (mounted && version == loadVersion) {
         setState(() {
           rows = r;
@@ -307,7 +308,7 @@ class _RemoteBrowserState extends State<RemoteBrowser> {
       final e = picks.first;
       await showDialog<void>(
         context: context,
-        builder: (dialog) => AlertDialog(
+        builder: (dialog) => ExplorerDialog(
           title: Text(e['name']),
           content: SelectableText(
             '${profile['protocol']} · ${profile['host']}\n${e['path']}\n${e['directory'] == true ? 'Folder' : sizeLabel(e['size'])}\n${dateLabel(e['modified'] ?? 0)}',
@@ -426,7 +427,7 @@ class _RemoteBrowserState extends State<RemoteBrowser> {
 
   Future<void> locations() async => showDialog<void>(
     context: context,
-    builder: (dialog) => SimpleDialog(
+    builder: (dialog) => ExplorerChoiceDialog(
       title: Text(profile['name']),
       children: [
         if (beganAtServer && !shares)
@@ -473,9 +474,25 @@ class _RemoteBrowserState extends State<RemoteBrowser> {
         ExplorerAction(icon: icon, label: label, onTap: busy ? () {} : tap);
     return ExplorerPane(
       busy: busy,
+      interceptBack: searching,
+      searchHeader: searching
+          ? ExplorerSearchHeader(
+              controller: search,
+              hint: 'Search this folder',
+              onChanged: (_) => setState(() {}),
+              onClose: () {
+                search.clear();
+                setState(() => searching = false);
+              },
+            )
+          : null,
       settings: widget.settings,
       windowId: widget.windowId,
       selecting: selected.isNotEmpty,
+      onSelectAll: () => setState(
+        () => selected.addAll(visible.map((e) => e['path'] as String)),
+      ),
+      onClearSelection: () => setState(() => selected.clear()),
       onBack: back,
       onTitle: locations,
       title: selected.isNotEmpty
@@ -540,27 +557,6 @@ class _RemoteBrowserState extends State<RemoteBrowser> {
             ],
       body: Column(
         children: [
-          if (searching)
-            Padding(
-              padding: const EdgeInsets.all(10),
-              child: TextField(
-                controller: search,
-                autofocus: true,
-                onChanged: (_) => setState(() {}),
-                decoration: InputDecoration(
-                  hintText: 'Search this folder',
-                  prefixIcon: const Icon(Icons.search),
-                  suffixIcon: IconButton(
-                    tooltip: 'Close search',
-                    onPressed: () {
-                      search.clear();
-                      setState(() => searching = false);
-                    },
-                    icon: const Icon(Icons.close),
-                  ),
-                ),
-              ),
-            ),
           Row(
             children: [
               IconButton(

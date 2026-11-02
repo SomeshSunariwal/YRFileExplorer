@@ -1,3 +1,4 @@
+import 'package:yr_file_explorer/shared/dialogs/explorer_dialog.dart';
 import 'package:flutter/material.dart';
 
 import 'package:yr_file_explorer/features/workspace/application/workspace_session.dart';
@@ -8,7 +9,7 @@ Future<void> showDefaultWindows(BuildContext context) {
     context: context,
     builder: (dialog) => AnimatedBuilder(
       animation: session,
-      builder: (_, _) => AlertDialog(
+      builder: (_, _) => ExplorerDialog(
         title: const Text('Default windows'),
         content: SizedBox(
           width: 360,

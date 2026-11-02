@@ -53,9 +53,11 @@ Browser folder sizes are calculated in the background and can be disabled in Set
 
 ## Other implemented features
 
-Local/removable-storage browsing, grid/list/detail views, sorting, hidden files, multi-selection, search, create, rename, copy, move, share, favorites, properties, SHA-256 checksums, Recycle Bin and restore, AES-encrypted ZIP creation/extraction, password-encrypted individual files, image zoom, UTF-8 text editing, native audio/video playback, Android APK installation, and app inventory/backup/uninstall.
+Local/removable-storage browsing, grid/list/detail views, sorting, hidden files, multi-selection, search, create, rename, copy, move, share, favorites, properties, SHA-256 checksums, Recycle Bin and restore, in-app ZIP/7z browsing, creation and extraction with optional passwords, password-encrypted individual files, image zoom with floating controls and thumbnails, UTF-8 text editing, native audio/video playback, offline paginated PDF reading with pinch zoom, Android APK installation, and app inventory/backup/uninstall.
 
-The workspace preserves local, category, tool and user-requested network tabs. App pages use the same horizontal slide transition; the active top tab shows its title and inactive tabs show icons. Local folders reuse the last Home window. Homepage shows six category icons followed by Download (with a file count) and Recent (without a count) on the next row, then storage volumes, Tools and Network. The old sidebar, Local card and Bookmarks card are removed. Floating bottom navigation leaves underlying content visible and scrollables reserve clearance for their final item.
+Archive creation offers ZIP and 7z in the same dialog. Extraction uses a new destination directory and rejects unsafe archive paths. The 7z changes have passed source analysis; Android build and runtime verification are pending.
+
+The workspace preserves local, category, tool and user-requested network tabs. App pages use the same horizontal slide transition; the active top tab shows its title and inactive tabs show icons. Folders reuse the last Device window; removable storage retains its storage name. Homepage shows eight category shortcuts in two rows of four (Recent has no count), then storage volumes, Tools and Network. The old sidebar, Local card and Bookmarks card are removed. Floating bottom navigation leaves underlying content visible and scrollables reserve clearance for their final item.
 
 SD Card Analyst has proportional row fills, selection, copy/cut/delete and a narrow floating red/green capacity bar above navigation. Storage Analyzer is a workspace tab with summary statistics and icon tiles for large files, recently modified items, empty folders and duplicate detection; each shortcut opens a dedicated results tab with inspection and selection actions. Folder scans use a separate cancellable progress dialog, keeping the existing page underneath and committing the new folder only after a successful scan. The duplicate Space usage section is removed. Windows has a clipped Windows/Clipboard selector, screenshot previews, New and Close others; each card's Home icon chooses a startup tab. New opens a nested dialog while retaining Windows underneath.
 
@@ -100,7 +102,12 @@ Release builds currently use the local **development signing key**. Configure yo
 | `lib/core/` | Native bridge, settings, models, styling and formatting |
 | `lib/shared/` | Reusable dialogs and widgets |
 | `lib/features/` | Feature pages, feature widgets and application state |
+| `lib/core/utils/file_sort.dart` | Shared directory-first sorting for files and archives |
+| `lib/features/analysis/domain/` | Analysis kinds and cached result projections |
+| `lib/features/workspace/presentation/widgets/workspace_window.dart` | Workspace page dispatch, separated from session lifecycle |
 | `android/app/src/main/java/com/somesh/yrfileexplorer/` | Native engines grouped into Java packages by responsibility |
 | `assets/` | Runtime icons and visual assets |
+
+File and analyst list ordering is cached until source data or sorting changes. Tab label measurements are cached until labels or text scale change. Screenshot previews notify the Windows panel separately from navigation state; capture requests are coalesced and images are disposed after encoding. Hidden tabs stop their tickers, while translated page bodies have repaint boundaries. These changes retain the existing layout, colors and navigation timing; runtime frame-rate measurements still require a device run.
 
 The GitHub source package keeps application source, runtime assets, Flutter/Gradle configuration and wrapper files, dependency lockfiles, and maintained project documentation. Local SDK paths, build output, caches, APK inspection material and private signing files are excluded.

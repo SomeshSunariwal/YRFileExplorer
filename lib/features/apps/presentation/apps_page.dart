@@ -1,3 +1,5 @@
+import 'package:yr_file_explorer/shared/dialogs/explorer_dialog.dart';
+import 'package:yr_file_explorer/shared/widgets/explorer_search_header.dart';
 import 'package:yr_file_explorer/features/workspace/presentation/widgets/explorer_bottom_bar.dart';
 
 import 'dart:io';
@@ -76,7 +78,7 @@ class _AppsPageState extends State<AppsPage> with WidgetsBindingObserver {
       if (mounted) {
         setState(() {
           apps = rows;
-          selected.removeWhere((p) => !rows.any((a) => key(a) == p));
+          selected.retainAll(rows.map(key).toSet());
           loading = false;
         });
       }
@@ -91,6 +93,7 @@ class _AppsPageState extends State<AppsPage> with WidgetsBindingObserver {
   }
 
   List<Json> get rows {
+    final query = search.text.toLowerCase();
     final result = apps.where((a) {
       if (filter == 'User Apps' && a['system'] == true) return false;
       if (filter == 'System Apps' && a['system'] != true) return false;
@@ -98,9 +101,7 @@ class _AppsPageState extends State<AppsPage> with WidgetsBindingObserver {
       if (filter == 'Installed in sdcard' && a['external'] != true) {
         return false;
       }
-      return '${a['name']} ${a['package']}'.toLowerCase().contains(
-        search.text.toLowerCase(),
-      );
+      return '${a['name']} ${a['package']}'.toLowerCase().contains(query);
     }).toList();
     result.sort((a, b) {
       final v = switch (sort) {
@@ -123,7 +124,7 @@ class _AppsPageState extends State<AppsPage> with WidgetsBindingObserver {
   Future<void> chooseFilter() async {
     final value = await showDialog<String>(
       context: context,
-      builder: (dialog) => SimpleDialog(
+      builder: (dialog) => ExplorerChoiceDialog(
         title: const Center(child: Text('History')),
         children: [
           for (final name in [
@@ -170,7 +171,7 @@ class _AppsPageState extends State<AppsPage> with WidgetsBindingObserver {
       final a = picks.first;
       await showDialog<void>(
         context: context,
-        builder: (dialog) => AlertDialog(
+        builder: (dialog) => ExplorerDialog(
           title: Text(a['name']),
           content: SingleChildScrollView(
             child: SelectableText(
@@ -308,9 +309,22 @@ class _AppsPageState extends State<AppsPage> with WidgetsBindingObserver {
     return ExplorerPane(
       busy: busy,
       onActivate: () => load(background: true),
+      searchHeader: searching
+          ? ExplorerSearchHeader(
+              controller: search,
+              hint: 'Search applications',
+              onChanged: (_) => setState(() {}),
+              onClose: () {
+                search.clear();
+                setState(() => searching = false);
+              },
+            )
+          : null,
       settings: widget.settings,
       windowId: widget.windowId,
       selecting: selected.isNotEmpty,
+      onSelectAll: () => setState(() => selected.addAll(visible.map(key))),
+      onClearSelection: () => setState(() => selected.clear()),
       interceptBack: searching,
       onBack: selected.isNotEmpty
           ? () => setState(() => selected.clear())
@@ -365,42 +379,6 @@ class _AppsPageState extends State<AppsPage> with WidgetsBindingObserver {
             ],
       body: Column(
         children: [
-          if (searching)
-            Padding(
-              padding: const EdgeInsets.all(10),
-              child: TextField(
-                controller: search,
-                autofocus: true,
-                onChanged: (_) => setState(() {}),
-                decoration: InputDecoration(
-                  hintText: 'Search applications',
-                  prefixIcon: const Icon(Icons.search),
-                  suffixIcon: IconButton(
-                    tooltip: 'Close search',
-                    onPressed: () {
-                      search.clear();
-                      setState(() => searching = false);
-                    },
-                    icon: const Icon(Icons.close),
-                  ),
-                ),
-              ),
-            ),
-          if (selected.isNotEmpty)
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                TextButton(
-                  onPressed: () =>
-                      setState(() => selected.addAll(visible.map(key))),
-                  child: const Text('Select all'),
-                ),
-                TextButton(
-                  onPressed: () => setState(() => selected.clear()),
-                  child: const Text('Clear selection'),
-                ),
-              ],
-            ),
           Expanded(
             child: loading
                 ? const Center(child: CircularProgressIndicator())

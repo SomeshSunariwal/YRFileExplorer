@@ -109,18 +109,26 @@ class _WorkspacePageDeckState extends State<WorkspacePageDeck>
     final index =
         widget.pageIds.indexOf(widget.activeId) + nextDirection.toInt();
     if (index < 0 || index >= widget.pageIds.length) {
-      setState(() => swipeTarget = null);
+      if (swipeTarget != null) setState(() => swipeTarget = null);
       controller.value = 0;
       session.swipeMotion.value = null;
       return;
     }
-    setState(() {
-      direction = nextDirection;
-      swipeTarget = widget.pageIds[index];
-    });
+    final target = widget.pageIds[index];
+    if (direction != nextDirection || swipeTarget != target) {
+      setState(() {
+        direction = nextDirection;
+        swipeTarget = target;
+      });
+    }
     final width = context.size?.width ?? MediaQuery.sizeOf(context).width;
-    controller.value = (distance.abs() / width).clamp(0.0, 1.0);
-    publishSwipe();
+    final fraction = (distance.abs() / width).clamp(0.0, 1.0);
+    if (controller.value == fraction) {
+      publishSwipe();
+    } else {
+      // The controller listener already publishes this frame to the tab strip.
+      controller.value = fraction;
+    }
   }
 
   void dragEnd(DragEndDetails details) {
@@ -221,7 +229,12 @@ class _WorkspacePageDeckState extends State<WorkspacePageDeck>
                             footer: safe.bottom + explorerFooterHeight + 26,
                           ),
                           child: _PageMotion(
-                            fraction: swiping
+                            fraction:
+                                widget.pageIds[i] != widget.activeId &&
+                                    widget.pageIds[i] !=
+                                        (swiping ? swipeTarget : outgoingId)
+                                ? 0
+                                : swiping
                                 ? widget.pageIds[i] == widget.activeId
                                       ? -direction * progress
                                       : direction * (1 - progress)
@@ -290,7 +303,9 @@ class WorkspaceBodySlide extends StatelessWidget {
       child: ClipRect(
         child: FractionalTranslation(
           translation: Offset(motion.fraction, 0),
-          child: ColoredBox(color: motion.surface, child: child),
+          child: RepaintBoundary(
+            child: ColoredBox(color: motion.surface, child: child),
+          ),
         ),
       ),
     );

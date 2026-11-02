@@ -1,8 +1,17 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 
 import 'package:yr_file_explorer/core/models/json.dart';
 
 class Native {
+  static const _operationZoneKey = #fileOperation;
+  static Future<T> withFileOperation<T>(
+    void Function(Json) report,
+    String id,
+    Future<T> Function() action,
+  ) => runZoned(action, zoneValues: {_operationZoneKey: (id, report)});
+
   static const channel = MethodChannel('yr/files');
   static const eventChannel = EventChannel('yr/events');
   static final events = eventChannel
@@ -25,6 +34,16 @@ class Native {
         method == 'download' ||
         method == 'retryDownload') {
       await localNetworkAccess();
+    }
+    final operation =
+        Zone.current[_operationZoneKey] as (String, void Function(Json))?;
+    if (operation != null) {
+      final paths = args['sources'] ?? args['paths'];
+      final current = paths is List && paths.isNotEmpty
+          ? paths.first.toString()
+          : args['path']?.toString() ?? '';
+      if (current.isNotEmpty) operation.$2({'current': current});
+      args = {...args, 'operationId': operation.$1};
     }
     return channel.invokeMethod<T>(method, args);
   }

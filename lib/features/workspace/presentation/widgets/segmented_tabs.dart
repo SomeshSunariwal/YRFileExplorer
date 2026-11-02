@@ -1,17 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'package:yr_file_explorer/core/theme/explorer_style.dart';
 import 'package:yr_file_explorer/features/workspace/application/workspace_session.dart';
 
 class ReferenceTabs extends StatefulWidget {
-  final bool local;
-  final VoidCallback onHome, onLocal;
-  const ReferenceTabs({
-    super.key,
-    required this.local,
-    required this.onHome,
-    required this.onLocal,
-  });
+  final VoidCallback onLocal;
+  const ReferenceTabs({super.key, required this.onLocal});
   @override
   State<ReferenceTabs> createState() => _ReferenceTabsState();
 }
@@ -22,6 +18,14 @@ class _ReferenceTabsState extends State<ReferenceTabs>
   final scroll = ScrollController();
   final tabKeys = <String, GlobalKey>{};
   late final AnimationController motion;
+  late final Listenable animation;
+  Timer? revealTimer;
+  final measuredWidths = <String, double>{};
+  TextScaler? measuredScaler;
+  static const labelStyle = TextStyle(
+    fontSize: 12,
+    fontWeight: FontWeight.w500,
+  );
   int? activeId, fromId;
   static const duration = Duration(milliseconds: 320);
 
@@ -35,6 +39,7 @@ class _ReferenceTabsState extends State<ReferenceTabs>
       duration: duration,
       value: session.lastSwitchWasSwipe || fromId == activeId ? 1 : 0,
     );
+    animation = Listenable.merge([session, motion, session.swipeMotion]);
     session.addListener(changed);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -68,7 +73,8 @@ class _ReferenceTabsState extends State<ReferenceTabs>
 
   void revealActive() {
     final requested = session.activeId;
-    Future<void>.delayed(duration + const Duration(milliseconds: 20), () {
+    revealTimer?.cancel();
+    revealTimer = Timer(duration + const Duration(milliseconds: 20), () {
       final key = tabKeys[requested == null ? 'homepage' : 'window-$requested'];
       if (mounted &&
           requested == session.activeId &&
@@ -86,6 +92,7 @@ class _ReferenceTabsState extends State<ReferenceTabs>
 
   @override
   void dispose() {
+    revealTimer?.cancel();
     session.removeListener(changed);
     motion.dispose();
     scroll.dispose();
@@ -94,7 +101,7 @@ class _ReferenceTabsState extends State<ReferenceTabs>
 
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
-    animation: Listenable.merge([session, motion, session.swipeMotion]),
+    animation: TickerMode.valuesOf(context).enabled ? animation : session,
     builder: (context, _) {
       final dark = Theme.of(context).brightness == Brightness.dark;
       final tabs =
@@ -123,8 +130,8 @@ class _ReferenceTabsState extends State<ReferenceTabs>
             ))
               (
                 key: 'home-shortcut',
-                label: 'Home',
-                icon: Icons.home_outlined,
+                label: 'Device',
+                icon: Icons.phone_android_outlined,
                 id: -1,
                 select: widget.onLocal,
               ),
@@ -155,18 +162,30 @@ class _ReferenceTabsState extends State<ReferenceTabs>
       final fromIndex = previous < 0 ? activeIndex : previous;
       final progress =
           swipe?.progress ?? Curves.easeInOutCubic.transform(motion.value);
-      const style = TextStyle(fontSize: 12, fontWeight: FontWeight.w500);
-      // A shared selected slot keeps Homepage and Home the same overall width.
+      const style = labelStyle;
+      final scaler = MediaQuery.textScalerOf(context);
+      if (measuredScaler != scaler) {
+        measuredScaler = scaler;
+        measuredWidths.clear();
+      }
+      final keys = tabs.map((tab) => tab.key).toSet();
+      tabKeys.removeWhere((key, _) => !keys.contains(key));
+      final labels = tabs.map((tab) => tab.label).toSet();
+      measuredWidths.removeWhere((label, _) => !labels.contains(label));
+      // Text layout depends on labels and accessibility scale, not animation frames.
       var selectedWidth = 52.0;
       for (final tab in tabs) {
-        final painter = TextPainter(
-          text: TextSpan(text: tab.label, style: style),
-          textDirection: TextDirection.ltr,
-          textScaler: MediaQuery.textScalerOf(context),
-        )..layout();
-        final width = (painter.width + 24).clamp(52.0, 184.0);
+        final width = measuredWidths.putIfAbsent(tab.label, () {
+          final painter = TextPainter(
+            text: TextSpan(text: tab.label, style: style),
+            textDirection: TextDirection.ltr,
+            textScaler: scaler,
+          )..layout();
+          final width = (painter.width + 24).clamp(52.0, 184.0);
+          painter.dispose();
+          return width;
+        });
         if (width > selectedWidth) selectedWidth = width;
-        painter.dispose();
       }
       if (swipe != null &&
           scroll.hasClients &&

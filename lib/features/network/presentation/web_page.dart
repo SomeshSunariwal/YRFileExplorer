@@ -1,3 +1,4 @@
+import 'package:yr_file_explorer/shared/widgets/explorer_progress_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:yr_file_explorer/core/settings/app_settings.dart';
@@ -219,9 +220,9 @@ class _WebPageState extends State<WebPage> {
             top: 0,
             left: 0,
             right: 0,
-            child: LinearProgressIndicator(
+            child: ExplorerProgressBar(
               value: progress == 0 ? null : progress / 100,
-              minHeight: 2,
+              height: 3,
             ),
           ),
       ],

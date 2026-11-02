@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:yr_file_explorer/shared/widgets/explorer_selection_header.dart';
 import 'package:flutter/material.dart';
 import 'package:yr_file_explorer/features/workspace/presentation/widgets/explorer_navigation_header.dart';
 
@@ -6,7 +9,6 @@ import 'package:yr_file_explorer/features/workspace/presentation/widgets/workspa
 import 'package:yr_file_explorer/features/workspace/presentation/widgets/explorer_bottom_bar.dart';
 import 'package:yr_file_explorer/core/settings/app_settings.dart';
 import 'package:yr_file_explorer/core/theme/explorer_style.dart';
-import 'package:yr_file_explorer/core/theme/file_categories.dart';
 import 'package:yr_file_explorer/features/workspace/application/workspace_session.dart';
 import 'package:yr_file_explorer/features/workspace/presentation/widgets/segmented_tabs.dart';
 import 'package:yr_file_explorer/shared/widgets/breadcrumbs.dart';
@@ -16,14 +18,21 @@ class ExplorerPane extends StatefulWidget {
   final AppSettings settings;
   final int? windowId;
   final Widget title, body;
+  final Widget? searchHeader;
   final List<Widget> actions;
   final bool selecting, interceptBack, busy, extendBody;
-  final VoidCallback? onBack, onTitle, onActivate;
+  final VoidCallback? onBack,
+      onTitle,
+      onActivate,
+      onSelectAll,
+      onClearSelection;
+  final String selectAllLabel;
   const ExplorerPane({
     super.key,
     required this.settings,
     this.windowId,
     required this.title,
+    this.searchHeader,
     required this.body,
     required this.actions,
     this.selecting = false,
@@ -33,6 +42,9 @@ class ExplorerPane extends StatefulWidget {
     this.onBack,
     this.onTitle,
     this.onActivate,
+    this.onSelectAll,
+    this.onClearSelection,
+    this.selectAllLabel = 'Select all',
   });
   @override
   State<ExplorerPane> createState() => _ExplorerPaneState();
@@ -41,6 +53,7 @@ class ExplorerPane extends StatefulWidget {
 class _ExplorerPaneState extends State<ExplorerPane> {
   final session = ExplorerWorkspaceSession.instance;
   bool wasActive = false;
+  Timer? activationRefresh;
   @override
   void initState() {
     super.initState();
@@ -51,12 +64,24 @@ class _ExplorerPaneState extends State<ExplorerPane> {
   void workspaceChanged() {
     final active =
         widget.windowId != null && session.activeId == widget.windowId;
-    if (active && !wasActive) widget.onActivate?.call();
+    if (active && !wasActive) {
+      activationRefresh?.cancel();
+      // Let the horizontal transition finish before refreshing native data.
+      // Preserve the cached body throughout the motion and skip abandoned tabs.
+      activationRefresh = Timer(const Duration(milliseconds: 340), () {
+        if (mounted && session.activeId == widget.windowId) {
+          widget.onActivate?.call();
+        }
+      });
+    } else if (!active) {
+      activationRefresh?.cancel();
+    }
     wasActive = active;
   }
 
   @override
   void dispose() {
+    activationRefresh?.cancel();
     session.removeListener(workspaceChanged);
     super.dispose();
   }
@@ -89,14 +114,15 @@ class _ExplorerPaneState extends State<ExplorerPane> {
         automaticallyImplyLeading: false,
         toolbarHeight: explorerTabHeight,
         titleSpacing: 0,
-        title: ReferenceTabs(
-          local: true,
-          onHome: () => session.activate(null),
-          onLocal: () => session.open(session.root),
-        ),
+        title: ReferenceTabs(onLocal: () => session.open(session.root)),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(explorerHeaderHeight),
-          child: !widget.selecting
+          child: widget.searchHeader != null && !widget.selecting
+              ? ExplorerHeaderFrame(
+                  separators: false,
+                  child: widget.searchHeader!,
+                )
+              : !widget.selecting
               ? ExplorerNavigationHeader(
                   onBack: back,
                   onClose: () {
@@ -124,52 +150,13 @@ class _ExplorerPaneState extends State<ExplorerPane> {
                         ),
                 )
               : ExplorerHeaderFrame(
-                  separators: !widget.selecting,
-                  child: Row(
-                    children: [
-                      IconButton(
-                        tooltip: widget.selecting ? 'Done' : 'Back',
-                        onPressed: back,
-                        icon: Icon(
-                          widget.selecting ? Icons.check : Icons.arrow_back,
-                          color: primaryBlue,
-                          size: 22,
-                        ),
-                      ),
-                      Expanded(
-                        child: InkWell(
-                          onTap: widget.onTitle,
-                          child: DefaultTextStyle(
-                            style: TextStyle(
-                              color: explorerForeground(context),
-                              fontSize: 14,
-                            ),
-                            child: Center(
-                              child:
-                                  widget.title is ExplorerBreadcrumbs ||
-                                      widget.selecting
-                                  ? widget.title
-                                  : ExplorerLocationPill(child: widget.title),
-                            ),
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        tooltip: 'Close window',
-                        onPressed: () {
-                          if (widget.windowId != null) {
-                            session.close(widget.windowId!);
-                          } else {
-                            Navigator.maybePop(context);
-                          }
-                        },
-                        icon: const Icon(
-                          Icons.cancel_outlined,
-                          color: primaryBlue,
-                          size: 20,
-                        ),
-                      ),
-                    ],
+                  separators: false,
+                  child: ExplorerSelectionHeader(
+                    count: widget.title,
+                    onDone: widget.busy ? null : back,
+                    onSelectAll: widget.busy ? null : widget.onSelectAll,
+                    onClear: widget.busy ? null : widget.onClearSelection,
+                    selectAllLabel: widget.selectAllLabel,
                   ),
                 ),
         ),

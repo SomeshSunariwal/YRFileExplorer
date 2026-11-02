@@ -1,3 +1,5 @@
+import 'package:yr_file_explorer/shared/dialogs/explorer_dialog.dart';
+import 'package:yr_file_explorer/shared/widgets/explorer_search_header.dart';
 import 'package:yr_file_explorer/features/workspace/presentation/widgets/explorer_bottom_bar.dart';
 import 'package:flutter/material.dart';
 
@@ -73,7 +75,7 @@ class _NetworkPageState extends State<NetworkPage> {
     }
     final protocol = await showDialog<String>(
       context: context,
-      builder: (dialog) => SimpleDialog(
+      builder: (dialog) => ExplorerChoiceDialog(
         title: const Center(child: Text('New')),
         children: [
           for (final p
@@ -196,6 +198,71 @@ class _NetworkPageState extends State<NetworkPage> {
     }
   }
 
+  Widget iconBadge(IconData icon) => Container(
+    width: 32,
+    height: 32,
+    decoration: BoxDecoration(
+      color: primaryBlue.withValues(alpha: .09),
+      borderRadius: BorderRadius.circular(10),
+    ),
+    child: Icon(icon, size: 20, color: primaryBlue),
+  );
+
+  Widget sectionTitle(String label, IconData icon, int count) => Row(
+    children: [
+      iconBadge(icon),
+      const SizedBox(width: 10),
+      Expanded(
+        child: Text(
+          label,
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+        ),
+      ),
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: primaryBlue.withValues(alpha: .08),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(
+          '$count',
+          style: const TextStyle(
+            fontSize: 11,
+            color: primaryBlue,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    ],
+  );
+
+  Widget panel(Widget child) => Padding(
+    padding: const EdgeInsets.only(bottom: 10),
+    child: DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(
+              alpha: widget.settings.dark ? .16 : .04,
+            ),
+            blurRadius: 12,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Theme.of(context).colorScheme.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+          side: BorderSide(color: Theme.of(context).dividerColor),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: child,
+      ),
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     final rows = widget.settings.connections
@@ -213,26 +280,70 @@ class _NetworkPageState extends State<NetworkPage> {
               ),
         )
         .toList();
-    Widget profile(Json p) => ListTile(
-      leading: Icon(
-        p['protocol'] == 'SMB' ? Icons.computer : Icons.dns_outlined,
-        color: primaryBlue,
-      ),
-      title: Text(p['name']),
-      subtitle: Text('${p['protocol']} · ${p['host']}'),
-      onTap: () => connect(p),
-      trailing: PopupMenuButton<String>(
-        tooltip: 'Connection actions',
-        onSelected: (action) =>
-            action == 'edit' ? connect(p, edit: true) : remove(p),
-        itemBuilder: (_) => const [
-          PopupMenuItem(value: 'edit', child: Text('Edit connection')),
-          PopupMenuItem(value: 'remove', child: Text('Remove connection')),
-        ],
+    Widget profile(Json p) => Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+      child: Material(
+        color: Theme.of(context).colorScheme.surfaceContainerLow,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+          side: BorderSide(
+            color: Theme.of(context).dividerColor.withValues(alpha: .5),
+          ),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: ListTile(
+          minTileHeight: 56,
+          contentPadding: const EdgeInsets.only(left: 12, right: 2),
+          leading: iconBadge(
+            p['protocol'] == 'SMB'
+                ? Icons.computer_outlined
+                : Icons.dns_outlined,
+          ),
+          title: Text(
+            p['name'],
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+          ),
+          subtitle: Text(
+            '${p['protocol']} · ${p['host']}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 11),
+          ),
+          onTap: () => connect(p),
+          trailing: PopupMenuButton<String>(
+            tooltip: 'Connection actions',
+            onSelected: (action) =>
+                action == 'edit' ? connect(p, edit: true) : remove(p),
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'edit', child: Text('Edit connection')),
+              PopupMenuItem(value: 'remove', child: Text('Remove connection')),
+            ],
+          ),
+        ),
       ),
     );
     return ExplorerPane(
       busy: scanning,
+      interceptBack: searching,
+      onBack: searching
+          ? () {
+              search.clear();
+              setState(() => searching = false);
+            }
+          : null,
+      searchHeader: searching
+          ? ExplorerSearchHeader(
+              controller: search,
+              hint: 'Search connections',
+              onChanged: (_) => setState(() {}),
+              onClose: () {
+                search.clear();
+                setState(() => searching = false);
+              },
+            )
+          : null,
       settings: widget.settings,
       windowId: widget.windowId,
       title: Text(widget.section),
@@ -267,33 +378,12 @@ class _NetworkPageState extends State<NetworkPage> {
       ],
       body: Column(
         children: [
-          if (searching)
-            Padding(
-              padding: const EdgeInsets.all(10),
-              child: TextField(
-                controller: search,
-                onChanged: (_) => changed(),
-                autofocus: true,
-                decoration: InputDecoration(
-                  hintText: 'Search connections',
-                  prefixIcon: const Icon(Icons.search),
-                  suffixIcon: IconButton(
-                    tooltip: 'Close search',
-                    onPressed: () {
-                      search.clear();
-                      setState(() => searching = false);
-                    },
-                    icon: const Icon(Icons.close),
-                  ),
-                ),
-              ),
-            ),
           Expanded(
             child: ListView(
               padding: EdgeInsets.fromLTRB(
-                10,
-                10,
-                10,
+                12,
+                12,
+                12,
                 ExplorerBottomBar.contentBottomPadding(context),
               ),
               children: [
@@ -315,29 +405,32 @@ class _NetworkPageState extends State<NetworkPage> {
                                   ].contains(p['protocol']),
                           )
                           .toList();
-                      return Card(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        child: ExpansionTile(
+                      return panel(
+                        ExpansionTile(
                           key: PageStorageKey('network-$group'),
                           initiallyExpanded: true,
-                          title: Text('$group (${profiles.length})'),
+                          minTileHeight: 48,
+                          tilePadding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                          ),
+                          title: sectionTitle(group, switch (group) {
+                            'LAN' => Icons.computer_outlined,
+                            'FTP' => Icons.folder_shared_outlined,
+                            _ => Icons.public,
+                          }, profiles.length),
                           children: [
-                            if (profiles.isEmpty)
-                              ListTile(
-                                leading: const Icon(
-                                  Icons.add_circle_outline,
-                                  color: primaryBlue,
-                                ),
-                                title: const Text('New connection'),
-                                onTap: () => group == 'LAN'
-                                    ? connect({'protocol': 'SMB'})
-                                    : group == 'WebDAV'
-                                    ? connect({'protocol': 'WebDAV'})
-                                    : create(),
-                              ),
                             if (grid && profiles.isNotEmpty)
                               GridView.count(
                                 crossAxisCount: 3,
+                                mainAxisSpacing: 8,
+                                crossAxisSpacing: 8,
+                                mainAxisExtent: 96,
+                                padding: const EdgeInsets.fromLTRB(
+                                  12,
+                                  0,
+                                  12,
+                                  8,
+                                ),
                                 shrinkWrap: true,
                                 physics: const NeverScrollableScrollPhysics(),
                                 children: [
@@ -345,40 +438,102 @@ class _NetworkPageState extends State<NetworkPage> {
                                     InkWell(
                                       onTap: () => connect(p),
                                       onLongPress: () => remove(p),
-                                      child: Column(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
-                                        children: [
-                                          Icon(
-                                            group == 'LAN'
-                                                ? Icons.computer
-                                                : Icons.dns_outlined,
-                                            color: primaryBlue,
-                                            size: 38,
+                                      borderRadius: BorderRadius.circular(10),
+                                      child: Ink(
+                                        decoration: BoxDecoration(
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .surfaceContainerLow,
+                                          borderRadius: BorderRadius.circular(
+                                            10,
                                           ),
-                                          const SizedBox(height: 8),
-                                          Text(
-                                            p['name'],
-                                            maxLines: 2,
-                                            textAlign: TextAlign.center,
-                                          ),
-                                        ],
+                                        ),
+                                        child: Column(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: [
+                                            Icon(
+                                              group == 'LAN'
+                                                  ? Icons.computer
+                                                  : Icons.dns_outlined,
+                                              color: primaryBlue,
+                                              size: 38,
+                                            ),
+                                            const SizedBox(height: 8),
+                                            Text(
+                                              p['name'],
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                              textAlign: TextAlign.center,
+                                              style: const TextStyle(
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
                                       ),
                                     ),
                                 ],
                               )
                             else
                               ...profiles.map(profile),
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(12, 2, 12, 12),
+                              child: Material(
+                                color: primaryBlue.withValues(alpha: .07),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                  side: BorderSide(
+                                    color: primaryBlue.withValues(alpha: .18),
+                                  ),
+                                ),
+                                clipBehavior: Clip.antiAlias,
+                                child: InkWell(
+                                  onTap: () => group == 'LAN'
+                                      ? connect({'protocol': 'SMB'})
+                                      : group == 'WebDAV'
+                                      ? connect({'protocol': 'WebDAV'})
+                                      : create(),
+                                  child: const SizedBox(
+                                    height: 44,
+                                    child: Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        Icon(
+                                          Icons.add_circle_outline,
+                                          size: 19,
+                                          color: primaryBlue,
+                                        ),
+                                        SizedBox(width: 9),
+                                        Text(
+                                          'New connection',
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
                           ],
                         ),
                       );
                     },
                   ),
                 if (scanned)
-                  Card(
-                    child: ExpansionTile(
+                  panel(
+                    ExpansionTile(
                       initiallyExpanded: true,
-                      title: Text('Search Result (${discovered.length})'),
+                      title: sectionTitle(
+                        'Scan results',
+                        Icons.radar,
+                        discovered.length,
+                      ),
+                      minTileHeight: 56,
                       children: [
                         if (discovered.isEmpty)
                           const ListTile(
@@ -398,16 +553,6 @@ class _NetworkPageState extends State<NetworkPage> {
                             onTap: () => connect(server),
                           ),
                       ],
-                    ),
-                  ),
-                if (widget.section == 'Network')
-                  Card(
-                    child: ListTile(
-                      leading: const Icon(Icons.bluetooth, color: primaryBlue),
-                      title: const Text('Bluetooth'),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () => ExplorerWorkspaceSession.instance.onTool
-                          ?.call('bluetooth'),
                     ),
                   ),
               ],

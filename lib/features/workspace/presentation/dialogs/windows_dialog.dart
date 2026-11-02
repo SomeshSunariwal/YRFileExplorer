@@ -1,3 +1,5 @@
+import 'package:yr_file_explorer/shared/dialogs/explorer_dialog.dart';
+
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -15,17 +17,15 @@ Future<void> showExplorerWindows(BuildContext context) async {
   if (!context.mounted) return;
   return showDialog<void>(
     context: context,
-    builder: (dialog) => Dialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      clipBehavior: Clip.antiAlias,
+    builder: (dialog) => ExplorerDialogSurface(
+      maxWidth: 560,
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 560),
         child: SizedBox(
           child: DefaultTabController(
             length: 2,
             child: AnimatedBuilder(
-              animation: session,
+              animation: session.windowChanges,
               builder: (_, _) {
                 final files = session.clipboardItems?.call() ?? <String>[];
                 final media = MediaQuery.of(dialog);
@@ -76,30 +76,12 @@ Future<void> showExplorerWindows(BuildContext context) async {
                   height: panelHeight,
                   child: Column(
                     children: [
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(8, 4, 4, 0),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: WindowPanelTabs(
-                                windows: session.count,
-                                clipboard: files.length,
-                              ),
-                            ),
-                            IconButton(
-                              tooltip: 'Close panel',
-                              onPressed: () => Navigator.pop(dialog),
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints.tightFor(
-                                width: 44,
-                                height: 44,
-                              ),
-                              icon: const Icon(Icons.close_rounded, size: 20),
-                            ),
-                          ],
+                      ExplorerDialogHeader(
+                        title: WindowPanelTabs(
+                          windows: session.count,
+                          clipboard: files.length,
                         ),
                       ),
-                      const Divider(height: 1),
                       Expanded(
                         child: TabBarView(
                           children: [

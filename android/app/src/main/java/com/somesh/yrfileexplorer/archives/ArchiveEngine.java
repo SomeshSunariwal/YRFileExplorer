@@ -21,7 +21,8 @@ public final class ArchiveEngine {
         if(value.startsWith("/") || value.matches("^[a-zA-Z]:.*") || Arrays.asList(value.split("/")).contains(".."))throw new IOException("Archive contains an unsafe path");
         return value;
     }
-    public static List<Map<String,Object>> list(String path,String prefix,String password,String charset) throws Exception {
+    public static List<Map<String,Object>> list(String path,String prefix,String password,String charset) throws Exception {
+        if(path.toLowerCase(Locale.ROOT).endsWith(".7z"))return SevenZipEngine.list(path,prefix,password);
         Map<String,Map<String,Object>> rows=new LinkedHashMap<>();
         try(ZipFile zip=zip(path,password,charset)) {
             for(FileHeader header:zip.getFileHeaders()) {
@@ -36,7 +37,8 @@ public final class ArchiveEngine {
             }
         }return new ArrayList<>(rows.values());
     }
-    public static void extract(String path,String destination,List<String> entries,String password,String charset) throws Exception {
+    public static void extract(String path,String destination,List<String> entries,String password,String charset) throws Exception {
+        if(path.toLowerCase(Locale.ROOT).endsWith(".7z")){SevenZipEngine.extract(path,destination,entries,password);return;}
         Path root=Paths.get(destination).toAbsolutePath().normalize();Files.createDirectory(root);
         try(ZipFile zip=zip(path,password,charset)) {
             long remaining=root.toFile().getUsableSpace();

@@ -1,3 +1,5 @@
+import 'package:yr_file_explorer/shared/widgets/explorer_progress_bar.dart';
+import 'package:yr_file_explorer/shared/dialogs/explorer_dialog.dart';
 import 'package:yr_file_explorer/features/workspace/presentation/widgets/explorer_bottom_bar.dart';
 
 import 'dart:async';
@@ -254,7 +256,7 @@ class _DownloadPageState extends State<DownloadPage>
                         padding: const EdgeInsets.only(right: 10),
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(999),
-                          child: LinearProgressIndicator(
+                          child: ExplorerProgressBar(
                             value: done
                                 ? 1
                                 : total > 0
@@ -262,7 +264,8 @@ class _DownloadPageState extends State<DownloadPage>
                                 : failed
                                 ? 0
                                 : null,
-                            minHeight: 4,
+                            height: 10,
+                            showPercentage: total > 0 || done,
                           ),
                         ),
                       ),
@@ -318,8 +321,7 @@ class _DownloadFormState extends State<_DownloadForm> {
   }
 
   @override
-  Widget build(BuildContext context) => AlertDialog(
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+  Widget build(BuildContext context) => ExplorerDialog(
     title: const Text(
       'New download',
       style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),

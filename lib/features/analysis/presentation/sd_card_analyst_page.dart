@@ -1,3 +1,7 @@
+import 'package:yr_file_explorer/core/utils/file_sort.dart';
+import 'package:yr_file_explorer/shared/dialogs/operation_progress_dialog.dart';
+import 'package:yr_file_explorer/shared/dialogs/explorer_dialog.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -16,7 +20,6 @@ import 'package:yr_file_explorer/features/workspace/presentation/dialogs/windows
 import 'package:yr_file_explorer/features/workspace/presentation/widgets/explorer_action.dart';
 import 'package:yr_file_explorer/features/workspace/presentation/widgets/explorer_pane.dart';
 import 'package:yr_file_explorer/features/workspace/presentation/widgets/explorer_bottom_bar.dart';
-import 'package:yr_file_explorer/shared/widgets/breadcrumbs.dart';
 import 'package:yr_file_explorer/shared/widgets/empty_state.dart';
 import 'package:yr_file_explorer/features/analysis/presentation/widgets/analysis_usage_row.dart';
 import 'package:yr_file_explorer/features/files/application/file_clipboard.dart';
@@ -45,6 +48,10 @@ class _SdCardAnalystState extends State<SdCardAnalyst> {
   bool descending = true, scanning = true;
   Json? result, storage;
   final progressDialog = AnalysisProgressDialog();
+  Json? sortedResult;
+  List<Json>? sortedRows;
+  String? cachedSort;
+  bool? cachedDescending;
   String? error;
   StreamSubscription<Json>? subscription;
   @override
@@ -136,28 +143,27 @@ class _SdCardAnalystState extends State<SdCardAnalyst> {
   }
 
   List<Json> get rows {
-    final entries = jsonRows(result?['children']);
-    entries.sort((a, b) {
-      final order = switch (sort) {
-        'Name' => a['name'].toString().toLowerCase().compareTo(
-          b['name'].toString().toLowerCase(),
-        ),
-        'Files' => ((a['files'] ?? 0) as num).compareTo(
-          (b['files'] ?? 0) as num,
-        ),
-        'Folders' => ((a['folders'] ?? 0) as num).compareTo(
-          (b['folders'] ?? 0) as num,
-        ),
-        _ => ((a['size'] ?? 0) as num).compareTo((b['size'] ?? 0) as num),
-      };
-      return descending ? -order : order;
-    });
-    return entries;
+    if (sortedRows != null &&
+        identical(sortedResult, result) &&
+        cachedSort == sort &&
+        cachedDescending == descending) {
+      return sortedRows!;
+    }
+    final entries = sortedFileEntries(
+      jsonRows(result?['children']),
+      sort: sort,
+      descending: descending,
+    );
+    sortedResult = result;
+    cachedSort = sort;
+    cachedDescending = descending;
+    return sortedRows = entries;
   }
 
   void sortMenu() => showDialog<void>(
     context: context,
-    builder: (dialog) => SimpleDialog(
+    builder: (dialog) => ExplorerChoiceDialog(
+      maxWidth: 280,
       title: const Center(child: Text('Sort')),
       children: [
         for (final name in ['Name', 'Size', 'Files', 'Folders'])
@@ -205,10 +211,16 @@ class _SdCardAnalystState extends State<SdCardAnalyst> {
     }
     if (!mounted) return;
     try {
-      await Native.call('delete', {
-        'paths': selected.toList(),
-        'permanent': !recycle,
-      });
+      await runFileOperation(
+        context,
+        widget.settings.recycle
+            ? 'Moving files to Recycle Bin…'
+            : 'Deleting files…',
+        () => Native.call('delete', {
+          'paths': selected.toList(),
+          'permanent': !recycle,
+        }),
+      );
       selected.clear();
       await scan();
     } catch (e) {
@@ -219,7 +231,7 @@ class _SdCardAnalystState extends State<SdCardAnalyst> {
   void details([String? target]) => ExplorerWorkspaceSession.instance.open(
     target ?? path,
     page: 'storage_analysis',
-    title: 'Storage Analyzer',
+    title: 'Folder Analysis',
   );
   @override
   Widget build(BuildContext context) {
@@ -244,6 +256,10 @@ class _SdCardAnalystState extends State<SdCardAnalyst> {
       settings: widget.settings,
       windowId: widget.windowId,
       selecting: selected.isNotEmpty,
+      onSelectAll: () => setState(
+        () => selected.addAll(entries.map((e) => e['path'] as String)),
+      ),
+      onClearSelection: () => setState(() => selected.clear()),
       onBack: () {
         if (selected.isNotEmpty) {
           setState(() => selected.clear());
@@ -262,10 +278,10 @@ class _SdCardAnalystState extends State<SdCardAnalyst> {
       onTitle: () => showStorageLocations(context, onSelect: go),
       title: selected.isNotEmpty
           ? Text('${selected.length}/${entries.length}')
-          : ExplorerBreadcrumbs(
-              entries: ExplorerWorkspaceSession.instance.breadcrumbsFor(path),
-              onNavigate: go,
-              onCurrent: () => showStorageLocations(context, onSelect: go),
+          : const Text(
+              'Storage Analyzer',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
       actions: selected.isNotEmpty
           ? [
@@ -301,7 +317,7 @@ class _SdCardAnalystState extends State<SdCardAnalyst> {
           : [
               ExplorerAction(
                 icon: Icons.bar_chart,
-                label: 'Directory Analyze',
+                label: 'Analyze',
                 onTap: () => details(),
               ),
               ExplorerAction(
@@ -329,7 +345,7 @@ class _SdCardAnalystState extends State<SdCardAnalyst> {
             children: [
               Container(
                 color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                padding: const EdgeInsets.fromLTRB(71, 4, 49, 4),
+                padding: const EdgeInsets.fromLTRB(68, 4, 24, 4),
                 child: const Row(
                   children: [
                     Expanded(
@@ -337,14 +353,14 @@ class _SdCardAnalystState extends State<SdCardAnalyst> {
                     ),
                     Expanded(
                       child: Text(
-                        'Folders',
+                        'Share',
                         textAlign: TextAlign.center,
                         style: TextStyle(fontSize: 11),
                       ),
                     ),
                     Expanded(
                       child: Text(
-                        'Files',
+                        'Files / Folders',
                         textAlign: TextAlign.right,
                         style: TextStyle(fontSize: 11),
                       ),
@@ -362,60 +378,56 @@ class _SdCardAnalystState extends State<SdCardAnalyst> {
                           child: const Text('Refresh'),
                         ),
                       )
-                    : ListView.builder(
-                        padding: EdgeInsets.fromLTRB(
-                          8,
-                          5,
-                          8,
-                          capacityBottom + capacityHeight + 16,
-                        ),
-                        itemCount:
-                            entries.length +
-                            ((result?['skipped'] as num? ?? 0) > 0 ? 1 : 0),
-                        itemBuilder: (_, i) {
-                          if (i == entries.length) {
-                            return Padding(
-                              padding: const EdgeInsets.all(6),
-                              child: Text(
-                                '${result!['skipped']} inaccessible paths skipped',
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                  fontSize: 10,
-                                  color: Colors.grey,
-                                ),
-                              ),
-                            );
-                          }
-                          final e = entries[i];
-                          return AnalysisUsageRow(
-                            entry: e,
-                            total: analyzedTotal,
-                            selected: selected.contains(e['path']),
-                            selectionMode: selected.isNotEmpty,
-                            onToggle: () => setState(
-                              () => selected.contains(e['path'])
-                                  ? selected.remove(e['path'])
-                                  : selected.add(e['path']),
+                    : CustomScrollView(
+                        slivers: [
+                          SliverPadding(
+                            padding: EdgeInsets.fromLTRB(
+                              16,
+                              8,
+                              16,
+                              capacityBottom + capacityHeight + 16,
                             ),
-                            onOpen: () => e['directory'] == true
-                                ? go(e['path'])
-                                : Native.call('open', {
-                                    'path': e['path'],
-                                  }).catchError((Object error) {
-                                    if (context.mounted) {
-                                      showError(context, error);
-                                    }
-                                    return null;
-                                  }),
-                          );
-                        },
+                            sliver: SliverList.builder(
+                              itemCount: entries.length,
+                              itemBuilder: (_, i) {
+                                final e = entries[i];
+                                return Padding(
+                                  padding: EdgeInsets.only(
+                                    bottom: i == entries.length - 1 ? 0 : 6,
+                                  ),
+                                  child: AnalysisUsageRow(
+                                    entry: e,
+                                    total: analyzedTotal,
+                                    selected: selected.contains(e['path']),
+                                    selectionMode: selected.isNotEmpty,
+                                    onToggle: () => setState(
+                                      () => selected.contains(e['path'])
+                                          ? selected.remove(e['path'])
+                                          : selected.add(e['path']),
+                                    ),
+                                    onOpen: () => e['directory'] == true
+                                        ? go(e['path'])
+                                        : Native.call('open', {
+                                            'path': e['path'],
+                                          }).catchError((Object error) {
+                                            if (context.mounted) {
+                                              showError(context, error);
+                                            }
+                                            return null;
+                                          }),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ],
                       ),
               ),
             ],
           ),
           Positioned(
-            left: 32,
-            right: 32,
+            left: 38,
+            right: 38,
             bottom: capacityBottom,
             child: DecoratedBox(
               decoration: BoxDecoration(

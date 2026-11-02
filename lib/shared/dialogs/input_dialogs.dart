@@ -1,3 +1,4 @@
+import 'package:yr_file_explorer/shared/dialogs/explorer_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -22,7 +23,7 @@ Future<String?> askText(
   final controller = TextEditingController(text: initial);
   final result = await showDialog<String>(
     context: context,
-    builder: (context) => AlertDialog(
+    builder: (context) => ExplorerDialog(
       title: Text(title),
       content: SingleChildScrollView(
         child: Column(
@@ -68,7 +69,7 @@ Future<bool> confirm(
 }) async =>
     await showDialog<bool>(
       context: context,
-      builder: (c) => AlertDialog(
+      builder: (c) => ExplorerDialog(
         title: Text(title),
         content: Text(message),
         actions: [

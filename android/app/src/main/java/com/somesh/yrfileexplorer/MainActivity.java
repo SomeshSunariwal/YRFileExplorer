@@ -2,11 +2,14 @@ package com.somesh.yrfileexplorer;
 
 import com.somesh.yrfileexplorer.apps.AppCatalog;
 import com.somesh.yrfileexplorer.archives.ArchiveEngine;
-import com.somesh.yrfileexplorer.files.FileEngine;
+import com.somesh.yrfileexplorer.files.FileEngine;
+import com.somesh.yrfileexplorer.files.FileOperationProgress;
 import com.somesh.yrfileexplorer.files.TextFiles;
 import com.somesh.yrfileexplorer.storage.DocumentEngine;
 import com.somesh.yrfileexplorer.storage.FolderAnalyzer;
 import com.somesh.yrfileexplorer.media.MediaViewerActivity;
+import com.somesh.yrfileexplorer.media.VideoViewerActivity;
+import com.somesh.yrfileexplorer.media.PdfReaderActivity;
 import com.somesh.yrfileexplorer.network.BluetoothFiles;
 import com.somesh.yrfileexplorer.network.NetworkEngine;
 import com.somesh.yrfileexplorer.network.DownloadTasks;
@@ -193,23 +196,44 @@ public class MainActivity extends FlutterActivity {
                 Path p = Paths.get(path), target = FileEngine.named(p.getParent(),str(c,"name"));
                 Files.move(p,target); return target.toString();
             }
-            case "paste": {
-                List<String> sources = c.argument("sources"); List<String> completed = new ArrayList<>();
-                for (String source : sources) {
-                    Path src = Paths.get(source), dst = FileEngine.named(Paths.get(path),src.getFileName().toString());
-                    if (dst.toAbsolutePath().normalize().startsWith(src.toAbsolutePath().normalize())) throw new IOException("Cannot paste into the source folder");
-                    if (bool(c,"move")) {
-                        try { Files.move(src,dst); } catch (FileSystemException ex) { if (Files.exists(dst)) throw ex; FileEngine.copy(src,dst); FileEngine.delete(src); }
-                    } else FileEngine.copy(src,dst);
-                    completed.add(dst.toString());
-                }
-                return completed;
-            }
-            case "delete": {
-                List<String> paths = c.argument("paths");
-                for (String p : paths) { if (bool(c,"permanent")) FileEngine.delete(Paths.get(p)); else trash(Paths.get(p)); }
-                return null;
-            }
+            case "paste": {
+                List<String> sources = c.argument("sources"); List<String> completed = new ArrayList<>();
+                // Dragged groups are checked together before moving any source.
+                if(bool(c,"preflight")) {
+                    Set<Path> targets=new HashSet<>();
+                    Path destination=Paths.get(path).toRealPath();
+                    for(String source:sources) {
+                        Path src=Paths.get(source).toRealPath();
+                        Path dst=FileEngine.named(destination,Paths.get(source).getFileName().toString());
+                        if(dst.startsWith(src))throw new IOException("Cannot move a folder into itself");
+                        if(!targets.add(dst)||Files.exists(dst,LinkOption.NOFOLLOW_LINKS))throw new FileAlreadyExistsException(dst.toString());
+                    }
+                }
+                FileOperationProgress progress = fileProgress(c, sources);
+                for (String source : sources) {
+                    Path src = Paths.get(source), dst = FileEngine.named(Paths.get(path),src.getFileName().toString());
+                    if (dst.toAbsolutePath().normalize().startsWith(src.toAbsolutePath().normalize())) throw new IOException("Cannot paste into the source folder");
+                    if(progress!=null)progress.start(src);
+                    if (bool(c,"move")) {
+                        try { Files.move(src,dst); } catch (FileSystemException ex) { if (Files.exists(dst)) throw ex; FileEngine.copy(src,dst,progress==null?null:progress::fileDone); FileEngine.delete(src); }
+                    } else FileEngine.copy(src,dst,progress==null?null:progress::fileDone);
+                    if(progress!=null)progress.finish(src);
+                    completed.add(dst.toString());
+                }
+                return completed;
+            }
+            case "delete": {
+                List<String> paths = c.argument("paths");
+                FileOperationProgress progress = fileProgress(c, paths);
+                for (String item : paths) {
+                    Path source = Paths.get(item);
+                    if(progress!=null)progress.start(source);
+                    if(bool(c,"permanent"))FileEngine.delete(source,progress==null?null:progress::fileDone);
+                    else trash(source,progress);
+                    if(progress!=null)progress.finish(source);
+                }
+                return null;
+            }
             case "trash": return trashList();
             case "restore": restore(str(c,"id")); return null;
             case "deleteTrash": {
@@ -223,6 +247,7 @@ public class MainActivity extends FlutterActivity {
             case "archiveList": return ArchiveEngine.list(path,str(c,"prefix"),str(c,"password"),str(c,"charset"));
             case "archiveOpen": return ArchiveEngine.open(this,path,str(c,"entry"),str(c,"password"),str(c,"charset"));
             case "archiveExtract": { List<String> entries=c.argument("entries");ArchiveEngine.extract(path,str(c,"destination"),entries==null?List.of():entries,str(c,"password"),str(c,"charset"));return null; }
+            case "archiveCreate": { if(str(c,"format").equals("7z"))com.somesh.yrfileexplorer.archives.SevenZipEngine.create(c.argument("paths"),str(c,"destination"),str(c,"password")); else FileEngine.zip(c.argument("paths"),str(c,"destination"),str(c,"password")); return null; }
             case "zip": FileEngine.zip(c.argument("paths"), str(c,"destination"),str(c,"password")); return null;
             case "unzip": FileEngine.unzip(path,str(c,"destination"),str(c,"password")); return null;
             case "crypt": return FileEngine.crypt(path,str(c,"password"),bool(c,"decrypt"),str(c,"name"));
@@ -271,14 +296,18 @@ public class MainActivity extends FlutterActivity {
             default: throw new IOException("Unknown operation: " + c.method);
         }
     }
-    private void trash(Path source) throws Exception {
+    private FileOperationProgress fileProgress(MethodCall call,List<String> paths) throws IOException {
+        String id=str(call,"operationId");
+        return id.isEmpty()?null:new FileOperationProgress(id,paths,event->runOnUiThread(()->{if(events!=null)events.success(event);}));
+    }
+    private void trash(Path source,FileOperationProgress progress) throws Exception {
         String id=UUID.randomUUID().toString(); File base=new File(getExternalFilesDir(null),"trash"); if(!base.exists()&&!base.mkdirs())throw new IOException("Cannot create recycle bin");
         Path target=base.toPath().resolve(id);
         // Record metadata first so a process interruption cannot orphan a trashed item.
         JSONObject meta=new JSONObject().put("original",source.toString()).put("time",System.currentTimeMillis());
         prefs.edit().putString("trash_"+id,meta.toString()).commit();
         try { Files.move(source,target); }
-        catch(FileSystemException ex) { try { FileEngine.copy(source,target); FileEngine.delete(source); } catch(Exception fail) { if(!Files.exists(target))prefs.edit().remove("trash_"+id).commit(); throw fail; } }
+        catch(FileSystemException ex) { try { FileEngine.copy(source,target,progress==null?null:progress::fileDone); FileEngine.delete(source); } catch(Exception fail) { if(!Files.exists(target))prefs.edit().remove("trash_"+id).commit(); throw fail; } }
     }
     private List<Map<String,Object>> trashList() throws Exception {
         List<Map<String,Object>> result=new ArrayList<>(); Path base=new File(getExternalFilesDir(null),"trash").toPath();
@@ -310,6 +339,12 @@ public class MainActivity extends FlutterActivity {
         Uri u=path.startsWith("content:")?Uri.parse(path):ShareProvider.uri(new File(path));
         String mime=path.startsWith("content:")?getContentResolver().getType(u):new ShareProvider().getType(u);
         if(path.endsWith(".apk"))mime="application/vnd.android.package-archive";
+        if(!external && ("application/pdf".equals(mime) || path.toLowerCase(Locale.ROOT).endsWith(".pdf"))) {
+            startActivity(new Intent(this,PdfReaderActivity.class).setDataAndType(u,"application/pdf").putExtra("title",new File(path).getName()).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)); return;
+        }
+        if(!external && mime!=null && mime.startsWith("video/")) {
+            startActivity(new Intent(this,VideoViewerActivity.class).setDataAndType(u,mime).putExtra("title",new File(path).getName()).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)); return;
+        }
         if(!external && mime!=null && (mime.startsWith("video/")||mime.startsWith("audio/"))) {
             ArrayList<String> playlist=new ArrayList<>();
             if(mime.startsWith("audio/")&&!path.startsWith("content:")) {

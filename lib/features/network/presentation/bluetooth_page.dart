@@ -1,3 +1,4 @@
+import 'package:yr_file_explorer/shared/dialogs/explorer_dialog.dart';
 import 'package:yr_file_explorer/features/workspace/presentation/widgets/explorer_bottom_bar.dart';
 
 import 'dart:async';
@@ -126,34 +127,32 @@ class _BluetoothPageState extends State<BluetoothPage>
   }
 
   Future<void> open(Json device) async {
-    final choice = await showModalBottomSheet<String>(
+    final choice = await showDialog<String>(
       context: context,
-      builder: (sheet) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.bluetooth, color: primaryBlue),
-              title: Text(device['name']),
-              subtitle: Text(device['address']),
-            ),
-            ListTile(
-              leading: const Icon(Icons.folder_open),
-              title: const Text('Browse files'),
-              onTap: () => Navigator.pop(sheet, 'browse'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.send_outlined),
-              title: const Text('Send files'),
-              onTap: () => Navigator.pop(sheet, 'send'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.settings_outlined),
-              title: const Text('Pairing settings'),
-              onTap: () => Navigator.pop(sheet, 'settings'),
-            ),
-          ],
-        ),
+      builder: (sheet) => ExplorerChoiceDialog(
+        title: const Text('Bluetooth'),
+        children: [
+          ListTile(
+            leading: const Icon(Icons.bluetooth, color: primaryBlue),
+            title: Text(device['name']),
+            subtitle: Text(device['address']),
+          ),
+          ListTile(
+            leading: const Icon(Icons.folder_open),
+            title: const Text('Browse files'),
+            onTap: () => Navigator.pop(sheet, 'browse'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.send_outlined),
+            title: const Text('Send files'),
+            onTap: () => Navigator.pop(sheet, 'send'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.settings_outlined),
+            title: const Text('Pairing settings'),
+            onTap: () => Navigator.pop(sheet, 'settings'),
+          ),
+        ],
       ),
     );
     if (choice == 'send') await send();

@@ -15,6 +15,16 @@ class FileGlyph extends StatelessWidget {
     final category = entry['category'] as String? ?? 'Other';
     final path = entry['path'] as String? ?? '';
     if (!dir &&
+        (path.toLowerCase().endsWith('.pdf') ||
+            (entry['name']?.toString().toLowerCase().endsWith('.pdf') ??
+                false))) {
+      return Icon(
+        Icons.picture_as_pdf_rounded,
+        size: size,
+        color: const Color(0xffe44747),
+      );
+    }
+    if (!dir &&
         category == 'Images' &&
         path.startsWith('/') &&
         !path.endsWith('.svg')) {
@@ -23,11 +33,14 @@ class FileGlyph extends StatelessWidget {
         height: size,
         child: ClipRRect(
           borderRadius: BorderRadius.circular(4),
-          child: Image.file(
-            File(path),
-            fit: BoxFit.cover,
-            cacheWidth: 160,
-            cacheHeight: 160,
+          child: Image(
+            image: ResizeImage(
+              FileImage(File(path)),
+              width: 160,
+              height: 160,
+              policy: ResizeImagePolicy.fit,
+            ),
+            fit: BoxFit.contain,
             errorBuilder: (_, error, stack) => Icon(
               Icons.image_outlined,
               size: size,

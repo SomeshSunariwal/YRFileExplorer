@@ -1,3 +1,4 @@
+import 'package:yr_file_explorer/shared/dialogs/explorer_dialog.dart';
 import 'package:flutter/material.dart';
 
 import 'package:yr_file_explorer/core/models/json.dart';
@@ -64,16 +65,17 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
 
   Widget row(String label, Widget control) => Padding(
     padding: const EdgeInsets.symmetric(vertical: 5),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        SizedBox(
-          width: 82,
-          child: Text(label, style: const TextStyle(fontSize: 13)),
-        ),
-        Expanded(child: control),
-      ],
-    ),
+    child:
+        control is TextFormField || control is DropdownButtonFormField<String>
+        ? control
+        : Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label, style: const TextStyle(fontSize: 13)),
+              const SizedBox(height: 6),
+              control,
+            ],
+          ),
   );
   Widget field(String key, String hint, {bool secret = false}) => TextFormField(
     controller: fields[key],
@@ -84,9 +86,17 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
     keyboardType: key == 'port' ? TextInputType.number : TextInputType.text,
     style: const TextStyle(fontSize: 13),
     decoration: InputDecoration(
+      labelText: const {
+        'host': 'Server',
+        'port': 'Port',
+        'domain': 'Domain',
+        'share': 'Share',
+        'username': 'Username',
+        'password': 'Password',
+        'name': 'Display as',
+        'path': 'Path',
+      }[key],
       hintText: hint,
-      isDense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
       suffixIcon: secret
           ? IconButton(
               tooltip: showPassword ? 'Hide password' : 'Show password',
@@ -134,8 +144,7 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
     },
   );
   @override
-  Widget build(BuildContext context) => AlertDialog(
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+  Widget build(BuildContext context) => ExplorerDialog(
     title: Text(
       '${widget.profile?['host'] == null ? 'New' : 'Edit'} $protocol Server',
       textAlign: TextAlign.center,
@@ -210,7 +219,7 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
                 ),
               if (['FTP', 'FTPS', 'SMB'].contains(protocol))
                 CheckboxListTile(
-                  contentPadding: const EdgeInsets.only(left: 76),
+                  contentPadding: EdgeInsets.zero,
                   dense: true,
                   controlAffinity: ListTileControlAffinity.leading,
                   title: Text(
@@ -242,13 +251,7 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
                         DropdownMenuItem(value: name, child: Text(name)),
                     ],
                     onChanged: (v) => setState(() => encoding = v!),
-                    decoration: const InputDecoration(
-                      isDense: true,
-                      contentPadding: EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 10,
-                      ),
-                    ),
+                    decoration: const InputDecoration(labelText: 'Encoding'),
                   ),
                 ),
               row('Display as', field('name', 'Optional name')),

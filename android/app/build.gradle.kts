@@ -45,6 +45,8 @@ dependencies {
             .attribute(ArtifactTypeDefinition.ARTIFACT_TYPE_ATTRIBUTE, "jar")
     }
     implementation("net.lingala.zip4j:zip4j:2.11.6")
+    implementation("org.apache.commons:commons-compress:1.28.0")
+    implementation("org.tukaani:xz:1.12")
     implementation("commons-net:commons-net:3.13.0")
     implementation("com.github.mwiede:jsch:2.28.8")
     implementation("com.hierynomus:smbj:0.15.0")

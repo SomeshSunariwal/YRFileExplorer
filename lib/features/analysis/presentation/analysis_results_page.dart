@@ -1,4 +1,11 @@
+import 'package:yr_file_explorer/core/utils/file_sort.dart';
+import 'package:yr_file_explorer/shared/dialogs/operation_progress_dialog.dart';
+
+import 'widgets/duplicate_file_group_card.dart';
+
 import 'dart:async';
+
+import 'package:yr_file_explorer/features/analysis/domain/analysis_snapshot.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -39,6 +46,28 @@ class AnalysisResultsPage extends StatefulWidget {
 
 class _AnalysisResultsPageState extends State<AnalysisResultsPage> {
   List<Json> rows = [];
+  List<DuplicateFileGroup> duplicateGroups = [];
+  final expandedGroups = <String>{};
+  bool get duplicates => widget.kind == 'duplicates';
+
+  bool acceptsPayload(Json? payload) {
+    if (payload?['rows'] is! List) return false;
+    final values = jsonRows(payload!['rows']);
+    // Old flattened payloads did not retain verified group identity.
+    if (duplicates && values.any((e) => e['duplicateHash'] is! String)) {
+      return false;
+    }
+    replaceRows(values);
+    return true;
+  }
+
+  void replaceRows(List<Json> values) {
+    rows = foldersFirst(values);
+    duplicateGroups = duplicates ? DuplicateFileGroup.fromRows(values) : [];
+    expandedGroups.retainAll(duplicateGroups.map((g) => g.id));
+    selected.clear();
+  }
+
   final selected = <String>{};
   final progress = AnalysisProgressDialog();
   StreamSubscription<Json>? events;
@@ -50,9 +79,7 @@ class _AnalysisResultsPageState extends State<AnalysisResultsPage> {
     events = Native.events.listen((event) {
       if (event['id'] == job) progress.update(event);
     }, onError: (_) {});
-    if (widget.payload?['rows'] is List) {
-      rows = jsonRows(widget.payload!['rows']);
-    } else {
+    if (!acceptsPayload(widget.payload)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) refresh();
       });
@@ -63,9 +90,10 @@ class _AnalysisResultsPageState extends State<AnalysisResultsPage> {
   void didUpdateWidget(covariant AnalysisResultsPage old) {
     super.didUpdateWidget(old);
     if (!identical(old.payload, widget.payload) &&
-        widget.payload?['rows'] is List) {
-      rows = jsonRows(widget.payload!['rows']);
-      selected.clear();
+        !acceptsPayload(widget.payload)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) refresh();
+      });
     }
   }
 
@@ -104,27 +132,9 @@ class _AnalysisResultsPageState extends State<AnalysisResultsPage> {
         }))!,
       );
       if (!mounted || job != id) return;
-      final values = switch (widget.kind) {
-        'large' => jsonRows(
-          result['largest'],
-        ).where((e) => (e['size'] as num) >= 10 * 1024 * 1024).toList(),
-        'recent' => jsonRows(result['recent']),
-        'empty' => jsonRows(result['empty']),
-        _ => <Json>[
-          for (final group in jsonRows(result['duplicates']))
-            for (final item in group['paths'] as List)
-              {
-                'name': baseName(item.toString()),
-                'path': item.toString(),
-                'size': group['size'],
-                'directory': false,
-              },
-        ],
-      };
-      setState(() {
-        rows = values;
-        selected.clear();
-      });
+      final values = AnalysisSnapshot(result)
+          .rows(AnalysisKind.fromId(widget.kind));
+      setState(() => replaceRows(values));
     } catch (e) {
       if (mounted && !(e is PlatformException && e.code == 'CANCELLED')) {
         setState(() => error = e.toString());
@@ -143,23 +153,37 @@ class _AnalysisResultsPageState extends State<AnalysisResultsPage> {
   }
 
   Future<void> remove() async {
+    if (busy || selected.isEmpty) return;
+    final paths = selected.toList();
     if (!await confirm(
       context,
       widget.settings.recycle ? 'Move to Recycle Bin?' : 'Permanently delete?',
-      '${selected.length} selected items will be ${widget.settings.recycle ? 'moved to the bin.' : 'permanently deleted.'}',
+      '${paths.length} selected items will be ${widget.settings.recycle ? 'moved to the bin.' : 'permanently deleted.'}${duplicates ? ' Unchecked copies will be kept.' : ''}',
       action: widget.settings.recycle ? 'Move' : 'Delete',
     )) {
       return;
     }
     if (!mounted) return;
+    setState(() => busy = true);
     try {
-      await Native.call('delete', {
-        'paths': selected.toList(),
-        'permanent': !widget.settings.recycle,
-      });
+      await runFileOperation(
+        context,
+        widget.settings.recycle
+            ? 'Moving files to Recycle Bin…'
+            : 'Deleting files…',
+        () => Native.call('delete', {
+          'paths': paths,
+          'permanent': !widget.settings.recycle,
+        }),
+      );
+      if (!mounted) return;
+      setState(() => busy = false);
       await refresh();
     } catch (e) {
-      if (mounted) showError(context, e);
+      if (mounted) {
+        setState(() => busy = false);
+        showError(context, e);
+      }
     }
   }
 
@@ -177,12 +201,65 @@ class _AnalysisResultsPageState extends State<AnalysisResultsPage> {
     );
   }
 
+  Widget duplicateList() => ListView.builder(
+    padding: EdgeInsets.fromLTRB(
+      12,
+      12,
+      12,
+      ExplorerBottomBar.contentBottomPadding(context),
+    ),
+    itemCount: duplicateGroups.length,
+    itemBuilder: (_, i) {
+      final group = duplicateGroups[i];
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: DuplicateFileGroupCard(
+          key: ValueKey(group.id),
+          group: group,
+          expanded: expandedGroups.contains(group.id),
+          selected: selected,
+          enabled: !busy,
+          onExpand: () => setState(
+            () => expandedGroups.contains(group.id)
+                ? expandedGroups.remove(group.id)
+                : expandedGroups.add(group.id),
+          ),
+          onToggle: (path) => setState(
+            () => selected.contains(path)
+                ? selected.remove(path)
+                : selected.add(path),
+          ),
+          onOpen: (file) async {
+            try {
+              await Native.call('open', {'path': file['path']});
+            } catch (e) {
+              if (mounted) showError(context, e);
+            }
+          },
+        ),
+      );
+    },
+  );
+
   @override
   Widget build(BuildContext context) => ExplorerPane(
     settings: widget.settings,
     windowId: widget.windowId,
     onBack: back,
     selecting: selected.isNotEmpty,
+    selectAllLabel: duplicates ? 'Select extras' : 'Select all',
+    onSelectAll: () => setState(() {
+      if (duplicates) {
+        selected.clear();
+        selected.addAll([
+          for (final group in duplicateGroups)
+            for (final file in group.files.skip(1)) file['path'] as String,
+        ]);
+      } else {
+        selected.addAll(rows.map((e) => e['path'] as String));
+      }
+    }),
+    onClearSelection: () => setState(() => selected.clear()),
     title: Text(
       selected.isEmpty ? widget.title : '${selected.length}/${rows.length}',
     ),
@@ -201,16 +278,18 @@ class _AnalysisResultsPageState extends State<AnalysisResultsPage> {
             ),
           ]
         : [
-            ExplorerAction(
-              icon: Icons.copy_outlined,
-              label: 'Copy',
-              onTap: () => copy(false),
-            ),
-            ExplorerAction(
-              icon: Icons.content_cut,
-              label: 'Cut',
-              onTap: () => copy(true),
-            ),
+            if (!duplicates)
+              ExplorerAction(
+                icon: Icons.copy_outlined,
+                label: 'Copy',
+                onTap: () => copy(false),
+              ),
+            if (!duplicates)
+              ExplorerAction(
+                icon: Icons.content_cut,
+                label: 'Cut',
+                onTap: () => copy(true),
+              ),
             ExplorerAction(
               icon: Icons.delete_outline,
               label: 'Delete',
@@ -218,11 +297,26 @@ class _AnalysisResultsPageState extends State<AnalysisResultsPage> {
             ),
             ExplorerAction(
               icon: Icons.select_all,
-              label: 'Select all',
-              onTap: () => setState(
-                () => selected.addAll(rows.map((e) => e['path'] as String)),
-              ),
+              label: duplicates ? 'Select extras' : 'Select all',
+              onTap: () => setState(() {
+                if (duplicates) {
+                  selected.clear();
+                  selected.addAll([
+                    for (final group in duplicateGroups)
+                      for (final file in group.files.skip(1))
+                        file['path'] as String,
+                  ]);
+                } else {
+                  selected.addAll(rows.map((e) => e['path'] as String));
+                }
+              }),
             ),
+            if (duplicates)
+              ExplorerAction(
+                icon: Icons.deselect,
+                label: 'Clear',
+                onTap: () => setState(() => selected.clear()),
+              ),
             ExplorerAction(
               icon: Icons.filter_none,
               label: 'Windows',
@@ -246,6 +340,8 @@ class _AnalysisResultsPageState extends State<AnalysisResultsPage> {
                 ? 'Files larger than 10 MB appear here.'
                 : '',
           )
+        : duplicates
+        ? duplicateList()
         : ListView.builder(
             padding: EdgeInsets.only(
               bottom: ExplorerBottomBar.contentBottomPadding(context),

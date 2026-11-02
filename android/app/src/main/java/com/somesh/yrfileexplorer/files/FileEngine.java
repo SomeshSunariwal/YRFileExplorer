@@ -40,7 +40,10 @@ public final class FileEngine {
         if (name == null || name.trim().isEmpty() || name.equals(".") || name.equals("..") || name.contains("/") || name.contains("\\") || name.indexOf('\0') >= 0) throw new IOException("Invalid file name");
         return parent.resolve(name);
     }
-    public static void copy(Path source, Path target) throws IOException {
+    public static void copy(Path source, Path target) throws IOException {
+        copy(source, target, null);
+    }
+    public static void copy(Path source, Path target, java.util.function.Consumer<Path> progress) throws IOException {
         Path src = source.toRealPath(), dst = target.toAbsolutePath().normalize();
         if (dst.startsWith(src) || dst.equals(src)) throw new IOException("Cannot copy a folder into itself");
         if (Files.exists(dst, LinkOption.NOFOLLOW_LINKS)) throw new FileAlreadyExistsException(dst.toString());
@@ -51,14 +54,17 @@ public final class FileEngine {
             }
             @Override public FileVisitResult visitFile(Path p, BasicFileAttributes a) throws IOException {
                 if (a.isSymbolicLink()) throw new IOException("Symbolic links are not copied");
-                Files.copy(p, staging.resolve(src.relativize(p)), StandardCopyOption.COPY_ATTRIBUTES); return FileVisitResult.CONTINUE;
+                Files.copy(p, staging.resolve(src.relativize(p)), StandardCopyOption.COPY_ATTRIBUTES); if(progress!=null)progress.accept(p); return FileVisitResult.CONTINUE;
             }
         }); Files.move(staging,dst); }
         finally { if(Files.exists(staging,LinkOption.NOFOLLOW_LINKS))delete(staging); }
     }
-    public static void delete(Path p) throws IOException {
+    public static void delete(Path p) throws IOException {
+        delete(p, null);
+    }
+    public static void delete(Path p, java.util.function.Consumer<Path> progress) throws IOException {
         Files.walkFileTree(p, new SimpleFileVisitor<Path>() {
-            @Override public FileVisitResult visitFile(Path f, BasicFileAttributes a) throws IOException { Files.delete(f); return FileVisitResult.CONTINUE; }
+            @Override public FileVisitResult visitFile(Path f, BasicFileAttributes a) throws IOException { Files.delete(f); if(progress!=null)progress.accept(f); return FileVisitResult.CONTINUE; }
             @Override public FileVisitResult postVisitDirectory(Path d, IOException ex) throws IOException { if (ex != null) throw ex; Files.delete(d); return FileVisitResult.CONTINUE; }
         });
     }

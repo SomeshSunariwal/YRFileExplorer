@@ -1,3 +1,6 @@
+import 'package:yr_file_explorer/core/theme/explorer_style.dart';
+import 'package:yr_file_explorer/shared/widgets/explorer_search_header.dart';
+import 'package:yr_file_explorer/shared/dialogs/explorer_dialog.dart';
 import 'package:flutter/material.dart';
 
 import 'package:yr_file_explorer/shared/widgets/progress_overlay.dart';
@@ -219,7 +222,7 @@ class _TextEditorState extends State<TextEditor> {
       case 'Encoding':
         final value = await showDialog<String>(
           context: context,
-          builder: (dialog) => SimpleDialog(
+          builder: (dialog) => ExplorerChoiceDialog(
             title: const Text('Encoding'),
             children: [
               for (final name in [
@@ -251,7 +254,7 @@ class _TextEditorState extends State<TextEditor> {
       case 'Line terminator':
         final value = await showDialog<String>(
           context: context,
-          builder: (dialog) => SimpleDialog(
+          builder: (dialog) => ExplorerChoiceDialog(
             title: const Text('Line Terminator'),
             children: [
               for (final item in [
@@ -273,7 +276,7 @@ class _TextEditorState extends State<TextEditor> {
       case 'Font size':
         final value = await showDialog<double>(
           context: context,
-          builder: (dialog) => SimpleDialog(
+          builder: (dialog) => ExplorerChoiceDialog(
             title: const Text('Font size'),
             children: [
               for (final size in [12.0, 14.0, 16.0, 18.0, 20.0, 24.0])
@@ -409,23 +412,26 @@ class _TextEditorState extends State<TextEditor> {
             children: [
               if (searching)
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
+                  padding: EdgeInsets.zero,
                   child: Column(
                     children: [
-                      Row(
+                      ExplorerHeaderFrame(
+                        separators: false,
+                        child: ExplorerSearchHeader(
+                          controller: find,
+                          hint: 'Find text',
+                          onChanged: (_) {
+                            match = -1;
+                            findNext();
+                          },
+                          onSubmitted: (_) => findNext(),
+                          onClose: () => setState(() => searching = false),
+                        ),
+                      ),
+                      Wrap(
+                        spacing: 8,
+                        crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
-                          Expanded(
-                            child: TextField(
-                              controller: find,
-                              onChanged: (_) {
-                                match = -1;
-                                findNext();
-                              },
-                              decoration: const InputDecoration(
-                                hintText: 'Find',
-                              ),
-                            ),
-                          ),
                           Text(
                             '${matches.isEmpty ? 0 : match % matches.length + 1}/${matches.length}',
                             style: const TextStyle(fontSize: 11),
@@ -435,20 +441,6 @@ class _TextEditorState extends State<TextEditor> {
                             onPressed: () => findNext(previous: true),
                             icon: const Icon(Icons.keyboard_arrow_up),
                           ),
-                          IconButton(
-                            tooltip: 'Next match',
-                            onPressed: findNext,
-                            icon: const Icon(Icons.keyboard_arrow_down),
-                          ),
-                          IconButton(
-                            tooltip: 'Close find',
-                            onPressed: () => setState(() => searching = false),
-                            icon: const Icon(Icons.close),
-                          ),
-                        ],
-                      ),
-                      Row(
-                        children: [
                           FilterChip(
                             label: const Text('Match case'),
                             selected: matchCase,
@@ -517,7 +509,11 @@ class _TextEditorState extends State<TextEditor> {
                         ),
                         decoration: const InputDecoration(
                           contentPadding: EdgeInsets.all(14),
+                          filled: false,
                           border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          disabledBorder: InputBorder.none,
                         ),
                       ),
               ),
