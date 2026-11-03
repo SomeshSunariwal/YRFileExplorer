@@ -3,6 +3,8 @@
 !/.gitignore
 !/.metadata
 !/README.md
+!/LICENSE
+!/NOTICE
 !/AGENTS.md
 !/pubspec.yaml
 !/pubspec.lock

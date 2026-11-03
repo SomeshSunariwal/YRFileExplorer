@@ -17,6 +17,8 @@ flutter:
   uses-material-design: true
 
   assets:
+    - LICENSE
+    - NOTICE
     - assets/es-reference/
     - assets/es-3.2.3/
     - assets/branding/
