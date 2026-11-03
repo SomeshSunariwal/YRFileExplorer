@@ -61,6 +61,19 @@ public final class AppCatalog {
             @Override public FileVisitResult visitFileFailed(Path file,IOException error){return FileVisitResult.CONTINUE;}
         });return result;
     }
+    /** Extracts package artwork on the platform worker, never the UI thread. */
+    public String archiveIcon(String source) {
+        File file = new File(source);
+        if (!file.isFile() || !source.toLowerCase(Locale.ROOT).endsWith(".apk")) return null;
+        try {
+            PackageInfo info = packages.getPackageArchiveInfo(source, 0);
+            if (info == null || info.applicationInfo == null) return null;
+            return (String) entry(info, source, true).get("icon");
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
     public List<String> export(String name) throws Exception {
         ApplicationInfo app=packages.getApplicationInfo(name,0);
         Path folder=new File(context.getFilesDir(),"exports/"+UUID.randomUUID()).toPath();Files.createDirectories(folder);

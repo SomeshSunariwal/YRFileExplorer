@@ -36,7 +36,7 @@ public final class FolderAnalyzer {
     public static String category(String name) {
         String ext = name.toLowerCase(Locale.ROOT).replaceAll("^.*\\.", "");
         if (Set.of("jpg","jpeg","png","webp","gif","bmp","heic","avif","svg","raw").contains(ext)) return "Images";
-        if (Set.of("mp3","aac","flac","wav","ogg","m4a","opus").contains(ext)) return "Music";
+        if (com.somesh.yrfileexplorer.media.AudioFormats.isAudio(name)) return "Music";
         if (Set.of("mp4","mkv","avi","mov","webm","3gp","m4v","mpeg").contains(ext)) return "Videos";
         if (Set.of("txt","md","pdf","doc","docx","xls","xlsx","csv","ppt","pptx","json","xml","html","epub","log","dart","java").contains(ext)) return "Documents";
         if (Set.of("apk","apks","xapk","aab").contains(ext)) return "Apps";

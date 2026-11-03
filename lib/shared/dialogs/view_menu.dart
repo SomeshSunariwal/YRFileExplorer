@@ -10,6 +10,9 @@ Future<void> showExplorerViewMenu(
   required String sort,
   required bool descending,
   required List<String> sorts,
+  required String groupBy,
+  required bool groupDescending,
+  required void Function(String groupBy, bool descending) onGroupingChanged,
   required void Function(String mode, String sort, bool descending) onChanged,
 }) => showDialog<void>(
   context: context,
@@ -22,6 +25,14 @@ Future<void> showExplorerViewMenu(
           descending = nextDescending;
         });
         onChanged(mode, sort, descending);
+      }
+
+      void group(String value, bool reverse) {
+        update(() {
+          groupBy = value;
+          groupDescending = reverse;
+        });
+        onGroupingChanged(value, reverse);
       }
 
       final theme = Theme.of(dialog);
@@ -208,6 +219,65 @@ Future<void> showExplorerViewMenu(
                         ),
                     ],
                   ),
+                  const Padding(
+                    padding: EdgeInsets.only(top: 16, bottom: 4),
+                    child: Divider(height: 1),
+                  ),
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Group by',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      TextButton.icon(
+                        onPressed: groupBy == 'None'
+                            ? null
+                            : () => group(groupBy, !groupDescending),
+                        icon: Icon(
+                          groupDescending
+                              ? Icons.south_rounded
+                              : Icons.north_rounded,
+                          size: 15,
+                        ),
+                        label: Text(
+                          groupDescending ? 'Descending' : 'Ascending',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [
+                      for (final name in const ['None', 'Name', 'Size', 'Type'])
+                        ChoiceChip(
+                          label: Text(
+                            name,
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                          selected: groupBy == name,
+                          showCheckmark: false,
+                          selectedColor: primaryBlue.withValues(
+                            alpha: dark ? .22 : .12,
+                          ),
+                          side: BorderSide(
+                            color: groupBy == name
+                                ? primaryBlue
+                                : colors.outlineVariant,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          onSelected: (_) => group(name, groupDescending),
+                        ),
+                    ],
+                  ),
                 ],
               ),
             ),
@@ -218,11 +288,15 @@ Future<void> showExplorerViewMenu(
   ),
 );
 
-int explorerGridColumns(String mode) => mode.startsWith('Large')
-    ? 3
-    : mode.startsWith('Small')
-    ? 5
-    : 4;
+int explorerGridColumns(String mode, {required double width}) =>
+    ((width - 20 + 6) / (explorerGlyphSize(mode) + 32 + 6)).floor().clamp(
+      1,
+      12,
+    );
+
+double explorerGridLabelHeight(BuildContext context) =>
+    MediaQuery.textScalerOf(context).scale(11) * 1.25 * 2 + 4;
+
 double explorerGlyphSize(String mode) => mode.startsWith('Large')
     ? 64
     : mode.startsWith('Small')

@@ -140,6 +140,22 @@ class SettingsPage extends StatelessWidget {
                     ),
                   ],
                 ),
+                const _Section('Music'),
+                _SettingsCard(
+                  children: [
+                    _toggle(
+                      'Background playback',
+                      'Keep music playing after leaving the player',
+                      Icons.headphones_outlined,
+                      settings.backgroundPlayback,
+                      (v) async {
+                        settings.backgroundPlayback = v;
+                        await settings.save();
+                        if (!v) await Native.call('stopMusic');
+                      },
+                    ),
+                  ],
+                ),
                 const _Section('Permissions'),
                 _SettingsCard(
                   children: [

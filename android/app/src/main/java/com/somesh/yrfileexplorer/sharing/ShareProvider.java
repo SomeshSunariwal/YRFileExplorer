@@ -23,7 +23,15 @@ public class ShareProvider extends ContentProvider {
         } catch (IOException ex) { throw new FileNotFoundException(ex.getMessage()); }
     }
     @Override public boolean onCreate() { return true; }
-    @Override public String getType(Uri u) { String p = u.getQueryParameter("path"); String ext = MimeTypeMap.getFileExtensionFromUrl(p == null ? "" : p.replace(" ", "%20")).toLowerCase(java.util.Locale.ROOT); String mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext); return mime == null ? "application/octet-stream" : mime; }
+    @Override public String getType(Uri u) {
+        String path=u.getQueryParameter("path");
+        String name=path==null?"":new File(path).getName();
+        int dot=name.lastIndexOf('.');
+        String ext=dot<0?"":name.substring(dot+1).toLowerCase(java.util.Locale.ROOT);
+        String mime=com.somesh.yrfileexplorer.media.AudioFormats.mime(name);
+        if(mime==null) mime=MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext);
+        return mime==null?"application/octet-stream":mime;
+    }
     @Override public ParcelFileDescriptor openFile(Uri u, String mode) throws FileNotFoundException { if (!mode.equals("r")) throw new FileNotFoundException("Read-only"); return ParcelFileDescriptor.open(file(u), ParcelFileDescriptor.MODE_READ_ONLY); }
     @Override public Cursor query(Uri u, String[] projection, String s, String[] a, String sort) {
         try { File f = file(u); MatrixCursor c = new MatrixCursor(new String[]{OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE}); c.addRow(new Object[]{f.getName(), f.length()}); return c; }

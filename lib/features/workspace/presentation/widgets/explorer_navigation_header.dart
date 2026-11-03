@@ -136,7 +136,9 @@ class _ExplorerNavigationHeaderState extends State<ExplorerNavigationHeader>
                                       ? Icons.arrow_back
                                       : Icons.cancel_outlined,
                                   size: left ? 22 : 20,
-                                  color: primaryBlue,
+                                  color: !left && widget.onClose == null
+                                      ? primaryBlue.withValues(alpha: .3)
+                                      : primaryBlue,
                                 ),
                               ),
                             ),

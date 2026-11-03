@@ -431,8 +431,10 @@ class _RemoteBrowserState extends State<RemoteBrowser> {
       title: Text(profile['name']),
       children: [
         if (beganAtServer && !shares)
-          SimpleDialogOption(
-            onPressed: () {
+          ExplorerChoiceTile(
+            icon: Icons.folder_shared_outlined,
+            label: 'Shared folders',
+            onTap: () {
               Navigator.pop(dialog);
               profile['share'] = '';
               path = '/';
@@ -440,15 +442,15 @@ class _RemoteBrowserState extends State<RemoteBrowser> {
               selected.clear();
               load();
             },
-            child: const Text('Shared folders'),
           ),
         for (final location in {'/', ...history.reversed, path})
-          SimpleDialogOption(
-            onPressed: () {
+          ExplorerChoiceTile(
+            icon: Icons.folder_outlined,
+            label: location,
+            onTap: () {
               Navigator.pop(dialog);
               navigate(location);
             },
-            child: Text(location),
           ),
       ],
     ),

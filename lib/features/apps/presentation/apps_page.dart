@@ -1,3 +1,4 @@
+import 'package:yr_file_explorer/shared/widgets/grouped_file_view.dart';
 import 'package:yr_file_explorer/shared/dialogs/explorer_dialog.dart';
 import 'package:yr_file_explorer/shared/widgets/explorer_search_header.dart';
 import 'package:yr_file_explorer/features/workspace/presentation/widgets/explorer_bottom_bar.dart';
@@ -284,6 +285,15 @@ class _AppsPageState extends State<AppsPage> with WidgetsBindingObserver {
     sort: sort,
     descending: descending,
     sorts: const ['Name', 'Size', 'Installed'],
+    groupBy: widget.settings.groupBy,
+    groupDescending: widget.settings.groupDescending,
+    onGroupingChanged: (group, reverse) {
+      setState(() {
+        widget.settings.groupBy = group;
+        widget.settings.groupDescending = reverse;
+      });
+      widget.settings.save();
+    },
     onChanged: (mode, nextSort, nextDescending) => setState(() {
       viewMode = mode;
       grid = mode.endsWith('Icon');
@@ -400,110 +410,135 @@ class _AppsPageState extends State<AppsPage> with WidgetsBindingObserver {
                 : RefreshIndicator(
                     onRefresh: load,
                     child: grid
-                        ? GridView.builder(
-                            padding: EdgeInsets.fromLTRB(
-                              10,
-                              10,
-                              10,
-                              ExplorerBottomBar.contentBottomPadding(context),
-                            ),
-                            gridDelegate:
-                                SliverGridDelegateWithFixedCrossAxisCount(
-                                  crossAxisCount: explorerGridColumns(viewMode),
-                                  childAspectRatio: .83,
-                                  crossAxisSpacing: 6,
-                                  mainAxisSpacing: 8,
-                                ),
-                            itemCount: visible.length,
-                            itemBuilder: (_, i) {
-                              final a = visible[i];
-                              return InkWell(
-                                onLongPress: () => toggle(a),
-                                onTap: () => selected.isEmpty
-                                    ? run('Open', [a])
-                                    : toggle(a),
-                                borderRadius: BorderRadius.circular(10),
-                                child: Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    color: selected.contains(key(a))
-                                        ? primaryBlue.withValues(alpha: .12)
-                                        : null,
-                                    borderRadius: BorderRadius.circular(10),
+                        ? LayoutBuilder(
+                            builder: (context, constraints) => GroupedFileView(
+                              entries: visible,
+                              groupBy: widget.settings.groupBy,
+                              descending: widget.settings.groupDescending,
+                              child: GridView.builder(
+                                padding: EdgeInsets.fromLTRB(
+                                  10,
+                                  10,
+                                  10,
+                                  ExplorerBottomBar.contentBottomPadding(
+                                    context,
                                   ),
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Stack(
-                                        clipBehavior: Clip.none,
+                                ),
+                                gridDelegate:
+                                    SliverGridDelegateWithFixedCrossAxisCount(
+                                      crossAxisCount: explorerGridColumns(
+                                        viewMode,
+                                        width: constraints.maxWidth,
+                                      ),
+                                      mainAxisExtent:
+                                          explorerGlyphSize(viewMode) +
+                                          24 +
+                                          explorerGridLabelHeight(context),
+                                      crossAxisSpacing: 6,
+                                      mainAxisSpacing: 8,
+                                    ),
+                                itemCount: visible.length,
+                                itemBuilder: (_, i) {
+                                  final a = visible[i];
+                                  return InkWell(
+                                    onLongPress: () => toggle(a),
+                                    onTap: () => selected.isEmpty
+                                        ? run('Open', [a])
+                                        : toggle(a),
+                                    borderRadius: BorderRadius.circular(10),
+                                    child: Container(
+                                      padding: const EdgeInsets.all(8),
+                                      decoration: BoxDecoration(
+                                        color: selected.contains(key(a))
+                                            ? primaryBlue.withValues(alpha: .12)
+                                            : null,
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                      child: Column(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
                                         children: [
-                                          icon(
-                                            a,
-                                            size: explorerGlyphSize(viewMode),
+                                          Stack(
+                                            clipBehavior: Clip.none,
+                                            children: [
+                                              icon(
+                                                a,
+                                                size: explorerGlyphSize(
+                                                  viewMode,
+                                                ),
+                                              ),
+                                              if (selected.contains(key(a)))
+                                                const Positioned(
+                                                  right: -4,
+                                                  bottom: -4,
+                                                  child: Icon(
+                                                    Icons.check_circle,
+                                                    color: primaryBlue,
+                                                    size: 19,
+                                                  ),
+                                                ),
+                                            ],
                                           ),
-                                          if (selected.contains(key(a)))
-                                            const Positioned(
-                                              right: -4,
-                                              bottom: -4,
-                                              child: Icon(
-                                                Icons.check_circle,
-                                                color: primaryBlue,
-                                                size: 19,
+                                          const SizedBox(height: 8),
+                                          SizedBox(
+                                            height: explorerGridLabelHeight(
+                                              context,
+                                            ),
+                                            child: Text(
+                                              a['name'],
+                                              textAlign: TextAlign.center,
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                fontSize: 11,
+                                                height: 1.25,
                                               ),
                                             ),
+                                          ),
                                         ],
                                       ),
-                                      const SizedBox(height: 8),
-                                      SizedBox(
-                                        height: 32,
-                                        child: Text(
-                                          a['name'],
-                                          textAlign: TextAlign.center,
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                            fontSize: 11,
-                                            height: 1.25,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              );
-                            },
-                          )
-                        : ListView.builder(
-                            padding: EdgeInsets.only(
-                              bottom: ExplorerBottomBar.contentBottomPadding(
-                                context,
+                                    ),
+                                  );
+                                },
                               ),
                             ),
-                            itemCount: visible.length,
-                            itemBuilder: (_, i) {
-                              final a = visible[i];
-                              return ListTile(
-                                selected: selected.contains(key(a)),
-                                dense: viewMode.startsWith('Small'),
-                                leading: icon(a, size: 38),
-                                title: Text(a['name']),
-                                subtitle: viewMode.endsWith('Detail')
-                                    ? Text(
-                                        '${a['version']} · ${sizeLabel(a['size'])}',
-                                        style: const TextStyle(fontSize: 11),
-                                      )
-                                    : null,
-                                onLongPress: () => toggle(a),
-                                onTap: () => selected.isEmpty
-                                    ? run('Open', [a])
-                                    : toggle(a),
-                                trailing: IconButton(
-                                  tooltip: 'More',
-                                  onPressed: () => more([a]),
-                                  icon: const Icon(Icons.more_vert),
+                          )
+                        : GroupedFileView(
+                            entries: visible,
+                            groupBy: widget.settings.groupBy,
+                            descending: widget.settings.groupDescending,
+                            child: ListView.builder(
+                              padding: EdgeInsets.only(
+                                bottom: ExplorerBottomBar.contentBottomPadding(
+                                  context,
                                 ),
-                              );
-                            },
+                              ),
+                              itemCount: visible.length,
+                              itemBuilder: (_, i) {
+                                final a = visible[i];
+                                return ListTile(
+                                  selected: selected.contains(key(a)),
+                                  dense: viewMode.startsWith('Small'),
+                                  leading: icon(a, size: 38),
+                                  title: Text(a['name']),
+                                  subtitle: viewMode.endsWith('Detail')
+                                      ? Text(
+                                          '${a['version']} · ${sizeLabel(a['size'])}',
+                                          style: const TextStyle(fontSize: 11),
+                                        )
+                                      : null,
+                                  onLongPress: () => toggle(a),
+                                  onTap: () => selected.isEmpty
+                                      ? run('Open', [a])
+                                      : toggle(a),
+                                  trailing: IconButton(
+                                    tooltip: 'More',
+                                    onPressed: () => more([a]),
+                                    icon: const Icon(Icons.more_vert),
+                                  ),
+                                );
+                              },
+                            ),
                           ),
                   ),
           ),

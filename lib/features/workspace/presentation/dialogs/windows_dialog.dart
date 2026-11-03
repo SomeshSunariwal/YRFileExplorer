@@ -66,7 +66,13 @@ Future<void> showExplorerWindows(BuildContext context) async {
                         session.activate(id);
                         Navigator.pop(dialog);
                       },
-                      onClose: id == null ? null : () => session.close(id),
+                      onClose:
+                          id == null ||
+                              session.windows
+                                  .firstWhere((w) => w.id == id)
+                                  .split
+                          ? null
+                          : () => session.close(id),
                     );
                 return AnimatedContainer(
                   duration: MediaQuery.disableAnimationsOf(dialog)
@@ -115,8 +121,14 @@ Future<void> showExplorerWindows(BuildContext context) async {
                                         MainAxisAlignment.spaceEvenly,
                                     children: [
                                       TextButton.icon(
-                                        onPressed: () {
-                                          showNewExplorerWindow(dialog);
+                                        onPressed: () async {
+                                          final splitOpened =
+                                              await showNewExplorerWindow(
+                                                dialog,
+                                              );
+                                          if (splitOpened && dialog.mounted) {
+                                            Navigator.pop(dialog);
+                                          }
                                         },
                                         icon: const Icon(Icons.add),
                                         label: const Text('New'),

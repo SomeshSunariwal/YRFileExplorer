@@ -85,3 +85,22 @@ Future<bool> confirm(
       ),
     ) ??
     false;
+
+Future<bool?> chooseNewItemType(BuildContext context) => showDialog<bool>(
+  context: context,
+  builder: (dialog) => ExplorerChoiceDialog(
+    title: const Text('New'),
+    children: [
+      ExplorerChoiceTile(
+        icon: Icons.insert_drive_file_outlined,
+        label: 'File',
+        onTap: () => Navigator.pop(dialog, false),
+      ),
+      ExplorerChoiceTile(
+        icon: Icons.create_new_folder_outlined,
+        label: 'Folder',
+        onTap: () => Navigator.pop(dialog, true),
+      ),
+    ],
+  ),
+);

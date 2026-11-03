@@ -96,6 +96,7 @@ public class MainActivity extends FlutterActivity {
                     case "cancelAnalysis": { AtomicBoolean flag = scans.get(str(call,"id")); if (flag != null) flag.set(true); result.success(null); return; }
                     case "preferences": result.success(prefs.getString("settings", "{}")); return;
                     case "savePreferences": prefs.edit().putString("settings",str(call,"value")).apply(); result.success(null); return;
+                    case "stopMusic": stopService(new Intent(this,com.somesh.yrfileexplorer.media.AudioPlaybackService.class)); result.success(null); return;
                     case "open": open(str(call,"path"), false); result.success(null); return;
                     case "openExternal": open(str(call,"path"), true); result.success(null); return;
                     case "share": share(call.argument("paths")); result.success(null); return;
@@ -264,7 +265,8 @@ public class MainActivity extends FlutterActivity {
                 StringBuilder hash=new StringBuilder(); for(byte b:d.digest())hash.append(String.format("%02x",b)); return hash.toString();
             }
             case "apps": return new AppCatalog(this).installed(bool(c,"system"));
-            case "apkFiles": return new AppCatalog(this).archives(path);
+            case "apkFiles": return new AppCatalog(this).archives(path);
+            case "apkIcon": return new AppCatalog(this).archiveIcon(path);
             case "exportApp": return new AppCatalog(this).export(str(c,"package"));
             case "backupApp": {
                 String pkg=str(c,"package"); ApplicationInfo a=getPackageManager().getApplicationInfo(pkg,0);
@@ -348,7 +350,7 @@ public class MainActivity extends FlutterActivity {
         if(!external && mime!=null && (mime.startsWith("video/")||mime.startsWith("audio/"))) {
             ArrayList<String> playlist=new ArrayList<>();
             if(mime.startsWith("audio/")&&!path.startsWith("content:")) {
-                File parent=new File(path).getParentFile();File[] files=parent==null?null:parent.listFiles(f->f.isFile()&&f.getName().toLowerCase(Locale.ROOT).matches(".*\\.(mp3|m4a|aac|wav|ogg|flac|opus|amr)$"));
+                File parent=new File(path).getParentFile();File[] files=parent==null?null:parent.listFiles(f->f.isFile()&&com.somesh.yrfileexplorer.media.AudioFormats.isAudio(f.getName()));
                 if(files!=null){Arrays.sort(files,Comparator.comparing(File::getName,String.CASE_INSENSITIVE_ORDER));for(File f:files)playlist.add(f.getAbsolutePath());}
             }
             startActivity(new Intent(this,MediaViewerActivity.class).setDataAndType(u,mime).putExtra("title",new File(path).getName()).putExtra("sourcePath",path).putStringArrayListExtra("playlist",playlist).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)); return;

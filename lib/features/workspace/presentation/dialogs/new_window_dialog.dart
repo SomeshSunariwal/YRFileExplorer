@@ -70,7 +70,7 @@ const _types = [
   ),
 ];
 
-Future<void> showNewExplorerWindow(BuildContext context) async {
+Future<bool> showNewExplorerWindow(BuildContext context) async {
   final session = ExplorerWorkspaceSession.instance;
   final current = session.windows
       .where((w) => w.id == session.activeId && w.profile == null)
@@ -84,7 +84,36 @@ Future<void> showNewExplorerWindow(BuildContext context) async {
     context: context,
     builder: (_) => _NewWindowDialog(initialPath: initial),
   );
-  if (choice == null || !context.mounted) return;
+  if (choice == null || !context.mounted) return false;
+  if (choice['split'] == true) {
+    var local = session.windows
+        .where(
+          (w) =>
+              w.page == 'files' &&
+              w.profile == null &&
+              w.category == null &&
+              !w.recent,
+        )
+        .lastOrNull;
+    if (local == null) {
+      session.open(session.root);
+      local = session.windows
+          .where(
+            (w) =>
+                w.page == 'files' &&
+                w.profile == null &&
+                w.category == null &&
+                !w.recent,
+          )
+          .lastOrNull;
+    }
+    if (local != null) {
+      session.activate(local.id);
+      session.setSplit(local.id, true);
+      return true;
+    }
+    return false;
+  }
   final type = choice['type'] as String;
   final primary =
       session.volumes.where((v) => v['removable'] != true).firstOrNull?['path']
@@ -120,6 +149,7 @@ Future<void> showNewExplorerWindow(BuildContext context) async {
     case 'apps' || 'trash':
       session.openPage(type);
   }
+  return false;
 }
 
 class _NewWindowDialog extends StatefulWidget {
@@ -356,6 +386,14 @@ class _NewWindowDialogState extends State<_NewWindowDialog> {
         onPressed: () => Navigator.pop(context),
         child: const Text('Cancel'),
       ),
+      if (type.id == 'device')
+        OutlinedButton(
+          onPressed: () => Navigator.pop(context, <String, dynamic>{
+            'type': 'device',
+            'split': true,
+          }),
+          child: const Text('Split'),
+        ),
       FilledButton.icon(
         onPressed: create,
         icon: const Icon(Icons.add, size: 18),

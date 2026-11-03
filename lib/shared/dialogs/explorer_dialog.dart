@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:yr_file_explorer/core/theme/file_categories.dart';
 import 'package:yr_file_explorer/core/theme/explorer_style.dart';
 
 /// Shared History-style surface for every app-owned modal.
@@ -177,5 +178,28 @@ class ExplorerChoiceDialog extends StatelessWidget {
         ],
       ],
     ),
+  );
+}
+
+/// Consistent icon, text and touch target for modal list actions.
+class ExplorerChoiceTile extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  const ExplorerChoiceTile({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) => ListTile(
+    minTileHeight: 48,
+    contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 2),
+    horizontalTitleGap: 12,
+    leading: Icon(icon, size: 20, color: primaryBlue),
+    title: Text(label, style: const TextStyle(fontSize: 14)),
+    onTap: onTap,
   );
 }

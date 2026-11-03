@@ -15,7 +15,7 @@ import java.util.*;
 public class AudioPlaybackService extends Service {
     public final ArrayList<String> queue=new ArrayList<>();
     public int index,repeat;
-    public boolean shuffle,prepared;
+    public boolean shuffle,prepared,loading;
     public String error;
     public String trackTitle="",artist="Unknown artist";
     public android.graphics.Bitmap artwork;
@@ -47,20 +47,35 @@ public class AudioPlaybackService extends Service {
     public String title(){return queue.isEmpty()?"Music":trackTitle.isEmpty()?new File(current()).getName():trackTitle;}
     private Uri uri(){return current().startsWith("content:")?Uri.parse(current()):ShareProvider.uri(new File(current()));}
     public void load(List<String> files,String path){
-        if(path.equals(current())&&player!=null)return;
-        queue.clear();queue.addAll(files);if(queue.isEmpty())queue.add(path);index=Math.max(0,queue.indexOf(path));startTrack();
-    }
+        if(path == null || path.isEmpty()) return;
+        if(path.equals(current()) && player != null) {
+            if(error != null) startTrack(); else play();
+            return;
+        }
+        queue.clear();
+        if(files != null) for(String file : files) if(file != null && !file.isEmpty() && !queue.contains(file)) queue.add(file);
+        if(!queue.contains(path)) queue.add(0,path);
+        index=queue.indexOf(path);startTrack();
+    }
     public boolean playing(){try{return prepared&&player!=null&&player.isPlaying();}catch(IllegalStateException ignored){return false;}}
     public int position(){try{return prepared?player.getCurrentPosition():0;}catch(IllegalStateException ignored){return 0;}}
     public int duration(){try{return prepared?player.getDuration():0;}catch(IllegalStateException ignored){return 0;}}
     public void seek(int value){if(prepared){player.seekTo(Math.max(0,Math.min(value,duration())));publish();}}
-    public void play(){if(prepared && audioManager.requestAudioFocus(focus)==AudioManager.AUDIOFOCUS_REQUEST_GRANTED){player.start();publish();}}
+    public void play(){
+        if(!prepared || player == null) return;
+        try {
+            if(audioManager.requestAudioFocus(focus) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+                error=null; player.start();
+            } else error="Audio is in use. Tap Play to try again.";
+        } catch(IllegalStateException ex) { error="Playback stopped. Tap Play to retry."; prepared=false; }
+        publish();
+    }
     public void pause(){if(playing())player.pause();publish();}
-    public void toggle(){if(playing())pause();else play();}
+    public void toggle(){if(playing())pause();else if(error!=null&&!prepared)startTrack();else play();}
     public void select(int target){if(target>=0&&target<queue.size()){index=target;startTrack();}}
     public void next(int delta){if(queue.isEmpty())return;if(delta<0&&position()>3000){seek(0);return;}index=shuffle&&queue.size()>1?(index+1+random.nextInt(queue.size()-1))%queue.size():Math.floorMod(index+delta,queue.size());startTrack();}
     private void startTrack(){
-        if(player!=null)player.release();prepared=false;error=null;trackTitle="";artist="Unknown artist";artwork=null;player=new MediaPlayer();
+        if(player!=null)player.release();prepared=false;loading=true;error=null;trackTitle="";artist="Unknown artist";artwork=null;player=new MediaPlayer();
         final String track=current();final Uri source=uri();
         metadataWorker.submit(()->{
             try(MediaMetadataRetriever data=new MediaMetadataRetriever()){
@@ -70,10 +85,10 @@ public class AudioPlaybackService extends Service {
             }catch(Exception ignored){}
         });
         player.setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build());player.setWakeMode(this,PowerManager.PARTIAL_WAKE_LOCK);
-        player.setOnPreparedListener(mp->{if(mp!=player)return;prepared=true;session.setMetadata(new MediaMetadata.Builder().putString(MediaMetadata.METADATA_KEY_TITLE,title()).putLong(MediaMetadata.METADATA_KEY_DURATION,duration()).build());play();});
+        player.setOnPreparedListener(mp->{if(mp!=player)return;prepared=true;loading=false;session.setMetadata(new MediaMetadata.Builder().putString(MediaMetadata.METADATA_KEY_TITLE,title()).putLong(MediaMetadata.METADATA_KEY_DURATION,duration()).build());play();});
         player.setOnCompletionListener(mp->{if(repeat==2){seek(0);play();}else if(index+1<queue.size()||repeat==1||shuffle){next(1);}else{seek(0);publish();}});
-        player.setOnErrorListener((mp,what,extra)->{error="This media format cannot be played on your device.";prepared=false;publish();return true;});
-        try{player.setDataSource(this,uri());player.prepareAsync();}catch(Exception ex){error=ex.getMessage();publish();}
+        player.setOnErrorListener((mp,what,extra)->{error="This media format cannot be played on your device.";prepared=false;loading=false;publish();return true;});
+        try{player.setDataSource(this,uri());player.prepareAsync();}catch(Exception ex){loading=false;error=ex.getMessage()==null?"Cannot open this track. Tap Play to retry.":ex.getMessage();publish();}
         publish();
     }
     private PendingIntent action(String name){return PendingIntent.getService(this,name.hashCode(),new Intent(this,AudioPlaybackService.class).setAction(name),PendingIntent.FLAG_IMMUTABLE|PendingIntent.FLAG_UPDATE_CURRENT);}

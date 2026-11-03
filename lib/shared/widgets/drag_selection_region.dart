@@ -103,18 +103,27 @@ class _DragSelectionRegionState extends State<DragSelectionRegion> {
   @override
   Widget build(BuildContext context) {
     final active = widget.enabled || dragging;
-    return GestureDetector(
+    return RawGestureDetector(
       behavior: HitTestBehavior.translucent,
-      dragStartBehavior: DragStartBehavior.down,
-      onPanStart: active ? start : null,
-      onPanUpdate: active
-          ? (details) {
-              pointer = details.globalPosition;
-              paintAtPointer();
+      gestures: active
+          ? {
+              PanGestureRecognizer:
+                  GestureRecognizerFactoryWithHandlers<PanGestureRecognizer>(
+                    () => PanGestureRecognizer(),
+                    (recognizer) => recognizer
+                      ..dragStartBehavior = DragStartBehavior.down
+                      ..onStart = start
+                      ..onUpdate = (details) {
+                        pointer = details.globalPosition;
+                        paintAtPointer();
+                      }
+                      ..onEnd = (_) {
+                        finish();
+                      }
+                      ..onCancel = finish,
+                  ),
             }
-          : null,
-      onPanEnd: active ? (_) => finish() : null,
-      onPanCancel: active ? finish : null,
+          : const {},
       child: widget.child,
     );
   }

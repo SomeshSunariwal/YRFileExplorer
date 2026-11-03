@@ -96,6 +96,7 @@ class WorkspaceWindow extends StatelessWidget {
               title: window.title,
               recent: window.recent,
               initialSearch: window.search,
+              split: window.split,
             )
           : RemoteBrowser(
               settings: settings,

@@ -1,5 +1,4 @@
 import 'package:yr_file_explorer/shared/widgets/explorer_progress_bar.dart';
-import 'package:yr_file_explorer/shared/dialogs/explorer_dialog.dart';
 import 'package:flutter/material.dart';
 
 import 'package:yr_file_explorer/features/workspace/presentation/widgets/explorer_navigation_header.dart';
@@ -445,28 +444,7 @@ class _ExplorerHomeState extends State<ExplorerHome>
       ExplorerWorkspaceSession.instance.open(primary, search: true);
   void _showWindows() => showExplorerWindows(context);
   Future<void> _newFolder() async {
-    final directory = await showDialog<bool>(
-      context: context,
-      builder: (dialog) => ExplorerChoiceDialog(
-        title: const Center(child: Text('New')),
-        children: [
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(dialog, false),
-            child: const Padding(
-              padding: EdgeInsets.all(12),
-              child: Text('File'),
-            ),
-          ),
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(dialog, true),
-            child: const Padding(
-              padding: EdgeInsets.all(12),
-              child: Text('Folder'),
-            ),
-          ),
-        ],
-      ),
-    );
+    final directory = await chooseNewItemType(context);
     if (directory == null || !mounted) return;
     final name = await askText(context, directory ? 'New folder' : 'New file');
     if (name == null || name.trim().isEmpty) return;

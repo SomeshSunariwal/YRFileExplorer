@@ -82,12 +82,16 @@ class _NetworkPageState extends State<NetworkPage> {
               in widget.section == 'FTP'
                   ? ['FTP', 'SFTP', 'FTPS']
                   : ['FTP', 'SFTP', 'FTPS', 'WebDAV', 'SMB'])
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(dialog, p),
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Text(p == 'SMB' ? 'LAN' : p.toLowerCase()),
-              ),
+            ExplorerChoiceTile(
+              icon: p == 'SMB'
+                  ? Icons.computer_outlined
+                  : p == 'WebDAV'
+                  ? Icons.web_outlined
+                  : p == 'SFTP' || p == 'FTPS'
+                  ? Icons.lock_outline
+                  : Icons.folder_shared_outlined,
+              label: p == 'SMB' ? 'LAN' : p,
+              onTap: () => Navigator.pop(dialog, p),
             ),
         ],
       ),

@@ -181,6 +181,17 @@ class _SdCardAnalystState extends State<SdCardAnalyst> {
             },
             child: Row(
               children: [
+                Icon(
+                  switch (name) {
+                    'Name' => Icons.sort_by_alpha,
+                    'Size' => Icons.data_usage,
+                    'Files' => Icons.insert_drive_file_outlined,
+                    _ => Icons.folder_outlined,
+                  },
+                  size: 20,
+                  color: primaryBlue,
+                ),
+                const SizedBox(width: 12),
                 Expanded(child: Text(name)),
                 if (sort == name)
                   Icon(

@@ -21,6 +21,7 @@ class ExplorerWindow {
   final Json? profile;
   final previewKey = GlobalKey();
   bool locked = false;
+  bool split = false;
   String? url;
   Json? payload;
   ExplorerWindow(
@@ -124,7 +125,7 @@ class ExplorerWorkspaceSession extends ChangeNotifier {
   }
 
   void closeOthers() {
-    windows.removeWhere((w) => w.id != activeId && !w.locked);
+    windows.removeWhere((w) => w.id != activeId && !w.locked && !w.split);
     previews.removeWhere(
       (id, _) => id != null && !windows.any((w) => w.id == id),
     );
@@ -415,6 +416,20 @@ class ExplorerWorkspaceSession extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setSplit(int id, bool enabled) {
+    final window = windows.where((w) => w.id == id).firstOrNull;
+    if (window == null ||
+        window.page != 'files' ||
+        window.profile != null ||
+        window.category != null ||
+        window.recent) {
+      return;
+    }
+    if (window.split == enabled) return;
+    window.split = enabled;
+    notifyListeners();
+  }
+
   void updatePath(int id, String path) {
     final index = windows.indexWhere((w) => w.id == id);
     if (index < 0 || windows[index].path == path) return;
@@ -436,7 +451,7 @@ class ExplorerWorkspaceSession extends ChangeNotifier {
   void close(int id) {
     lastSwitchWasSwipe = false;
     final index = windows.indexWhere((w) => w.id == id);
-    if (index < 0 || windows[index].locked) return;
+    if (index < 0 || windows[index].locked || windows[index].split) return;
     windows.removeAt(index);
     previews.remove(id);
     pasteActions.remove(id);

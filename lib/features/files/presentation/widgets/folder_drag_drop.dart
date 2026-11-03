@@ -1,3 +1,5 @@
+import 'package:yr_file_explorer/core/models/json.dart';
+
 import 'dart:async';
 
 import 'package:flutter/gestures.dart';
@@ -10,8 +12,29 @@ import 'package:yr_file_explorer/shared/widgets/file_glyph.dart';
 class FolderDragData {
   final String path, name;
   final List<String> paths;
-  FolderDragData(this.path, this.name, {List<String>? paths})
-    : paths = List.unmodifiable(paths ?? [path]);
+  final List<Json> entries;
+  final bool directory;
+  final String category;
+  FolderDragData(
+    this.path,
+    this.name, {
+    List<String>? paths,
+    List<Json>? entries,
+    this.directory = true,
+    this.category = 'Other',
+  }) : paths = List.unmodifiable(paths ?? [path]),
+       entries = List.unmodifiable(
+         (entries ??
+                 [
+                   {
+                     'path': path,
+                     'name': name,
+                     'directory': directory,
+                     'category': category,
+                   },
+                 ])
+             .map((entry) => Map<String, dynamic>.unmodifiable(entry)),
+       );
 
   bool canMoveInto(String destination) =>
       paths.isNotEmpty &&
@@ -26,7 +49,8 @@ class FolderDragData {
       );
 }
 
-/// A hold selects; movement lifts the group. Already-selected folders can be dragged anytime.
+/// A hold selects. Selected items require a full second before lifting,
+/// leaving quick swipes available for painting selection and deselection.
 class FolderDraggable extends StatelessWidget {
   final FolderDragData data;
   final ValueChanged<bool> onDragging;
@@ -44,11 +68,12 @@ class FolderDraggable extends StatelessWidget {
     this.iconSize = 60,
   });
 
-  double get feedbackSize => iconSize + (data.paths.length.clamp(1, 3) - 1) * 6;
+  double get feedbackSize =>
+      iconSize + (data.entries.length.clamp(1, 3) - 1) * 14;
 
   @override
   Widget build(BuildContext context) => Tooltip(
-    message: 'Drag folder to move',
+    message: 'Drag selected items to move',
     child: _PickupWindowDraggable<FolderDragData>(
       onHold: onHold,
       isSelected: isSelected,
@@ -69,15 +94,11 @@ class FolderDraggable extends StatelessWidget {
             child: Stack(
               clipBehavior: Clip.none,
               children: [
-                for (var i = data.paths.length.clamp(1, 3) - 1; i >= 0; i--)
+                for (var i = data.entries.length.clamp(1, 3) - 1; i >= 0; i--)
                   Positioned(
-                    left: i * 6.0,
-                    bottom: i * 6.0,
-                    child: FileGlyph({
-                      'directory': true,
-                      'path': data.path,
-                      'name': data.name,
-                    }, size: iconSize),
+                    left: i * 14.0,
+                    bottom: i * 14.0,
+                    child: FileGlyph(data.entries[i], size: iconSize),
                   ),
                 if (data.paths.length > 1)
                   Positioned(
@@ -215,7 +236,12 @@ class _PickupWindowPointer extends MultiDragPointerState {
     this.selectedAtStart,
   ) {
     if (selectedAtStart) {
-      held = true;
+      holdTimer = Timer(const Duration(seconds: 1), () {
+        held = true;
+        if (!arenaAccepted) resolve(GestureDisposition.accepted);
+        HapticFeedback.selectionClick();
+        tryPickup();
+      });
       return;
     }
     // Quick swipes retain scrolling/tab navigation. A stationary long press
@@ -233,7 +259,10 @@ class _PickupWindowPointer extends MultiDragPointerState {
 
   void tryPickup() {
     if (!held || expired || startDrag == null || pendingDelta == null) return;
-    if (pendingDelta!.distance <= computeHitSlop(kind, gestureSettings)) return;
+    if (!selectedAtStart &&
+        pendingDelta!.distance <= computeHitSlop(kind, gestureSettings)) {
+      return;
+    }
     final start = startDrag!;
     startDrag = null;
     windowTimer?.cancel();
@@ -247,11 +276,6 @@ class _PickupWindowPointer extends MultiDragPointerState {
         resolve(GestureDisposition.rejected);
       }
     } else {
-      if (selectedAtStart &&
-          !arenaAccepted &&
-          pendingDelta!.distance > computeHitSlop(kind, gestureSettings)) {
-        resolve(GestureDisposition.accepted);
-      }
       tryPickup();
     }
   }

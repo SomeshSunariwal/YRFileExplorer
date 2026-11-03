@@ -234,12 +234,10 @@ class _TextEditorState extends State<TextEditor> {
                 'Shift_JIS',
                 'ISO-8859-1',
               ])
-                SimpleDialogOption(
-                  onPressed: () => Navigator.pop(dialog, name),
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Text(name),
-                  ),
+                ExplorerChoiceTile(
+                  icon: Icons.translate,
+                  label: name,
+                  onTap: () => Navigator.pop(dialog, name),
                 ),
             ],
           ),
@@ -262,12 +260,10 @@ class _TextEditorState extends State<TextEditor> {
                 ('LF', 'UNIX Terminators - LF'),
                 ('CR', 'MAC Terminators - CR'),
               ])
-                SimpleDialogOption(
-                  onPressed: () => Navigator.pop(dialog, item.$1),
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Text(item.$2),
-                  ),
+                ExplorerChoiceTile(
+                  icon: Icons.keyboard_return,
+                  label: item.$2,
+                  onTap: () => Navigator.pop(dialog, item.$1),
                 ),
             ],
           ),
@@ -280,9 +276,10 @@ class _TextEditorState extends State<TextEditor> {
             title: const Text('Font size'),
             children: [
               for (final size in [12.0, 14.0, 16.0, 18.0, 20.0, 24.0])
-                SimpleDialogOption(
-                  onPressed: () => Navigator.pop(dialog, size),
-                  child: Text('${size.toInt()}'),
+                ExplorerChoiceTile(
+                  icon: Icons.format_size,
+                  label: '${size.toInt()}',
+                  onTap: () => Navigator.pop(dialog, size),
                 ),
             ],
           ),
