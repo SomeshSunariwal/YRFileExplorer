@@ -1,5 +1,7 @@
 # YR File Explorer
 
+Release notes: [v1.0.0](docs/releases/1.0.0.md).
+
 ## Overview
 
 YR File Explorer is an Android file manager built with Flutter and a native Java engine. It brings local storage, removable drives, storage analysis, archives, media viewers, and user-configured network connections into one tabbed workspace.
