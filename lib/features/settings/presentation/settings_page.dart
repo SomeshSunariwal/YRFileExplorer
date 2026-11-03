@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import 'package:yr_file_explorer/core/platform/native_bridge.dart';
@@ -13,7 +14,14 @@ class SettingsPage extends StatelessWidget {
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: settings,
     builder: (_, child) => Scaffold(
-      appBar: AppBar(title: const Text('Settings')),
+      appBar: AppBar(
+        centerTitle: false,
+        titleSpacing: 0,
+        title: Transform.translate(
+          offset: const Offset(-11, 0),
+          child: const Text('Settings'),
+        ),
+      ),
       body: SafeArea(
         top: false,
         bottom: false,
@@ -32,15 +40,15 @@ class SettingsPage extends StatelessWidget {
                 _SettingsCard(
                   children: [
                     Padding(
-                      padding: const EdgeInsets.all(18),
+                      padding: const EdgeInsets.all(14),
                       child: Row(
                         children: [
                           ClipRRect(
                             borderRadius: BorderRadius.circular(14),
                             child: Image.asset(
                               'assets/branding/app_icon.png',
-                              width: 52,
-                              height: 52,
+                              width: 44,
+                              height: 44,
                             ),
                           ),
                           const SizedBox(width: 16),
@@ -132,6 +140,22 @@ class SettingsPage extends StatelessWidget {
                     ),
                   ],
                 ),
+                const _Section('Music'),
+                _SettingsCard(
+                  children: [
+                    _toggle(
+                      'Background playback',
+                      'Keep music playing after leaving the player',
+                      Icons.headphones_outlined,
+                      settings.backgroundPlayback,
+                      (v) async {
+                        settings.backgroundPlayback = v;
+                        await settings.save();
+                        if (!v) await Native.call('stopMusic');
+                      },
+                    ),
+                  ],
+                ),
                 const _Section('Permissions'),
                 _SettingsCard(
                   children: [
@@ -149,41 +173,6 @@ class SettingsPage extends StatelessWidget {
                     ),
                   ],
                 ),
-                const _Section('Privacy & about'),
-                _SettingsCard(
-                  children: [
-                    const _InfoTile(
-                      title: 'Privacy',
-                      icon: Icons.verified_user_outlined,
-                      text: 'No tracking. No advertising. No analytics, advertising identifiers, crash reporting, or telemetry SDKs. Network connections happen only for file operations you request.',
-                    ),
-                    const _InfoTile(
-                      title: 'Passwords',
-                      icon: Icons.key_outlined,
-                      text: 'Connection passwords stay in memory unless you choose Remember password. Saved passwords are encrypted with Android Keystore. Encryption passwords are not stored.',
-                    ),
-                    const _InfoTile(
-                      title: 'Android storage restrictions',
-                      icon: Icons.lock_outline,
-                      text: 'Android blocks other apps’ private data and most Android/data and Android/obb folders. All-files access does not unlock these paths. Folder analysis always includes hidden files.',
-                    ),
-                    _action(
-                      'Open-source licenses',
-                      null,
-                      Icons.article_outlined,
-                      () => showLicensePage(
-                        context: context,
-                        applicationName: 'YR File Explorer',
-                        applicationVersion: '1.0.0',
-                        applicationIcon: Image.asset(
-                          'assets/branding/app_icon.png',
-                          width: 72,
-                          height: 72,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
               ],
             ),
           ),
@@ -198,19 +187,50 @@ class SettingsPage extends StatelessWidget {
     IconData icon,
     bool value,
     ValueChanged<bool> changed,
-  ) => SwitchListTile(
-    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
-    secondary: _SettingsIcon(icon),
-    title: Text(
-      title,
-      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+  ) => MergeSemantics(
+    child: Builder(
+      builder: (context) {
+        final dark = Theme.of(context).brightness == Brightness.dark;
+        return ListTile(
+          dense: true,
+          minTileHeight: 56,
+          minLeadingWidth: 36,
+          horizontalTitleGap: 12,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 14),
+          leading: _SettingsIcon(icon),
+          title: Text(
+            title,
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+          ),
+          subtitle: Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text(
+              subtitle,
+              style: const TextStyle(fontSize: 11.5, height: 1.25),
+            ),
+          ),
+          onTap: () => changed(!value),
+          trailing: SizedBox(
+            height: 44,
+            child: CupertinoSwitch(
+              value: value,
+              onChanged: changed,
+              activeTrackColor: primaryBlue,
+              inactiveTrackColor: dark ? const Color(0xff3b3b3b) : Colors.white,
+              thumbColor: Colors.white,
+              trackOutlineColor: WidgetStateProperty.resolveWith(
+                (states) => states.contains(WidgetState.selected)
+                    ? primaryBlue
+                    : dark
+                    ? const Color(0xff62676c)
+                    : const Color(0xffbac1c6),
+              ),
+              trackOutlineWidth: const WidgetStatePropertyAll(1.2),
+            ),
+          ),
+        );
+      },
     ),
-    subtitle: Padding(
-      padding: const EdgeInsets.only(top: 4),
-      child: Text(subtitle, style: const TextStyle(fontSize: 12, height: 1.4)),
-    ),
-    value: value,
-    onChanged: changed,
   );
 
   Widget _action(
@@ -219,7 +239,11 @@ class SettingsPage extends StatelessWidget {
     IconData icon,
     VoidCallback action,
   ) => ListTile(
-    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+    dense: true,
+    minTileHeight: 56,
+    minLeadingWidth: 36,
+    horizontalTitleGap: 12,
+    contentPadding: const EdgeInsets.symmetric(horizontal: 14),
     leading: _SettingsIcon(icon),
     title: Text(
       title,
@@ -228,10 +252,10 @@ class SettingsPage extends StatelessWidget {
     subtitle: subtitle == null
         ? null
         : Padding(
-            padding: const EdgeInsets.only(top: 4),
+            padding: const EdgeInsets.only(top: 2),
             child: Text(
               subtitle,
-              style: const TextStyle(fontSize: 12, height: 1.4),
+              style: const TextStyle(fontSize: 11.5, height: 1.25),
             ),
           ),
     trailing: const Icon(Icons.chevron_right, size: 20),
@@ -244,7 +268,7 @@ class _Section extends StatelessWidget {
   const _Section(this.label);
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(4, 24, 4, 10),
+    padding: const EdgeInsets.fromLTRB(4, 18, 4, 8),
     child: Text(
       label,
       style: TextStyle(
@@ -291,42 +315,12 @@ class _SettingsIcon extends StatelessWidget {
   const _SettingsIcon(this.icon);
   @override
   Widget build(BuildContext context) => Container(
-    width: 40,
-    height: 40,
+    width: 36,
+    height: 36,
     decoration: BoxDecoration(
       color: primaryBlue.withValues(alpha: .09),
       borderRadius: BorderRadius.circular(12),
     ),
-    child: Icon(icon, size: 21, color: primaryBlue),
-  );
-}
-
-class _InfoTile extends StatelessWidget {
-  final String title, text;
-  final IconData icon;
-  const _InfoTile({
-    required this.title,
-    required this.text,
-    required this.icon,
-  });
-  @override
-  Widget build(BuildContext context) => ExpansionTile(
-    leading: _SettingsIcon(icon),
-    tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-    title: Text(
-      title,
-      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-    ),
-    childrenPadding: const EdgeInsets.fromLTRB(72, 0, 20, 18),
-    children: [
-      Text(
-        text,
-        style: TextStyle(
-          fontSize: 12,
-          height: 1.5,
-          color: Theme.of(context).colorScheme.onSurfaceVariant,
-        ),
-      ),
-    ],
+    child: Icon(icon, size: 20, color: primaryBlue),
   );
 }

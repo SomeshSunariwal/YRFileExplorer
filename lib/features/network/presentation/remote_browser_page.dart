@@ -1,3 +1,7 @@
+import 'package:yr_file_explorer/core/utils/file_sort.dart';
+import 'package:yr_file_explorer/shared/dialogs/explorer_dialog.dart';
+import 'package:yr_file_explorer/shared/widgets/explorer_search_header.dart';
+import 'package:yr_file_explorer/features/workspace/presentation/widgets/explorer_bottom_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -13,6 +17,8 @@ import 'package:yr_file_explorer/features/workspace/presentation/dialogs/windows
 import 'package:yr_file_explorer/features/workspace/presentation/widgets/explorer_action.dart';
 import 'package:yr_file_explorer/features/workspace/presentation/widgets/explorer_pane.dart';
 import 'package:yr_file_explorer/shared/dialogs/input_dialogs.dart';
+import 'package:yr_file_explorer/shared/dialogs/view_menu.dart';
+import 'package:yr_file_explorer/shared/widgets/breadcrumbs.dart';
 import 'package:yr_file_explorer/shared/widgets/empty_state.dart';
 import 'package:yr_file_explorer/shared/widgets/file_glyph.dart';
 
@@ -35,6 +41,8 @@ class RemoteBrowser extends StatefulWidget {
 class _RemoteBrowserState extends State<RemoteBrowser> {
   late Json profile;
   late String path;
+  late bool beganAtServer;
+  int loadVersion = 0;
   List<Json> rows = [];
   final history = <String>[];
   bool loading = true, busy = false, grid = true, searching = false;
@@ -46,7 +54,35 @@ class _RemoteBrowserState extends State<RemoteBrowser> {
     super.initState();
     profile = Map.of(widget.profile);
     path = profile['path'] ?? '/';
-    load();
+    beganAtServer =
+        profile['protocol'] == 'SMB' &&
+        (profile['share']?.toString().isEmpty ?? true);
+    if (profile['protocol'] != 'Bluetooth' &&
+        profile['anonymous'] != true &&
+        (profile['username']?.toString().isNotEmpty ?? false) &&
+        !profile.containsKey('password')) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted) return;
+        final password = await askText(
+          context,
+          'Connect to ${profile['name']}',
+          label: 'Password',
+          secret: true,
+        );
+        if (!mounted) return;
+        if (password == null) {
+          setState(() {
+            loading = false;
+            error = 'Connection cancelled';
+          });
+          return;
+        }
+        profile['password'] = password;
+        load();
+      });
+    } else {
+      load();
+    }
   }
 
   Future<dynamic> request(
@@ -55,6 +91,7 @@ class _RemoteBrowserState extends State<RemoteBrowser> {
     String? local,
     String? destination,
     bool directory = false,
+    int retry = 0,
   }) async {
     final result = await Native.call('network', {
       ...profile,
@@ -66,6 +103,7 @@ class _RemoteBrowserState extends State<RemoteBrowser> {
     });
     if (result is Map && result['needsPassword'] == true) {
       if (!mounted) return null;
+      if (retry >= 1) throw Exception('Bluetooth authentication failed');
       final password = await askText(
         context,
         'Bluetooth file access',
@@ -82,6 +120,7 @@ class _RemoteBrowserState extends State<RemoteBrowser> {
         local: local,
         destination: destination,
         directory: directory,
+        retry: retry + 1,
       );
     }
     if (result is Map && result['needsTrust'] == true) {
@@ -95,7 +134,14 @@ class _RemoteBrowserState extends State<RemoteBrowser> {
         action: 'Trust this key',
       );
       if (!accepted) throw Exception('Server key was not trusted');
+      if (retry >= 1) throw Exception('The server key could not be verified');
       profile['fingerprint'] = result['fingerprint'];
+      final window = ExplorerWorkspaceSession.instance.windows
+          .where((w) => w.id == widget.windowId)
+          .firstOrNull;
+      if (window?.profile != null) {
+        window!.profile!['fingerprint'] = result['fingerprint'];
+      }
       for (final p in widget.settings.connections) {
         if (p['host'] == profile['host'] &&
             p['port'] == profile['port'] &&
@@ -110,35 +156,39 @@ class _RemoteBrowserState extends State<RemoteBrowser> {
         local: local,
         destination: destination,
         directory: directory,
+        retry: retry + 1,
       );
     }
     return result;
   }
 
   Future<void> load() async {
+    final version = ++loadVersion;
     if (widget.windowId != null) {
+      final window = ExplorerWorkspaceSession.instance.windows
+          .where((w) => w.id == widget.windowId)
+          .firstOrNull;
+      window?.profile?.addAll(profile);
       ExplorerWorkspaceSession.instance.updatePath(widget.windowId!, path);
     }
     setState(() {
-      loading = true;
+      loading = rows.isEmpty;
       error = null;
     });
     try {
-      final r = jsonRows(await request('list'));
-      r.sort((a, b) {
-        if (a['directory'] != b['directory']) {
-          return a['directory'] == true ? -1 : 1;
-        }
-        return a['name'].toString().compareTo(b['name'].toString());
-      });
-      if (mounted) {
+      final r = sortedFileEntries(
+        jsonRows(await request('list')),
+        sort: 'Name',
+        descending: false,
+      );
+      if (mounted && version == loadVersion) {
         setState(() {
           rows = r;
           loading = false;
         });
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted && version == loadVersion) {
         setState(() {
           loading = false;
           error = e is PlatformException ? e.message : e.toString();
@@ -147,12 +197,40 @@ class _RemoteBrowserState extends State<RemoteBrowser> {
     }
   }
 
-  String join(String name) =>
-      '${path.replaceAll(RegExp(r'[/\\]$'), '')}/${baseName(name)}';
-  Future<void> download(Json e) async {
+  bool get shares =>
+      profile['protocol'] == 'SMB' &&
+      (profile['share']?.toString().isEmpty ?? true);
+  String join(String name, [String? folder]) {
+    final item = baseName(name);
+    final encoded = profile['protocol'] == 'WebDAV'
+        ? Uri.encodeComponent(item)
+        : item;
+    return '${(folder ?? path).replaceAll(RegExp(r'[/\\]$'), '')}/$encoded';
+  }
+
+  List<(String, String)> get breadcrumbs {
+    final parts = path
+        .replaceAll('\\', '/')
+        .split('/')
+        .where((p) => p.isNotEmpty);
+    var current = '';
+    return [
+      (
+        profile['share']?.toString().isNotEmpty == true
+            ? profile['share'].toString()
+            : profile['name']?.toString() ?? profile['host'].toString(),
+        '/',
+      ),
+      for (final part in parts)
+        (Uri.decodeComponent(part), current = '$current/$part'),
+    ];
+  }
+
+  Future<void> download(Json e, {bool showFailure = true}) async {
     try {
-      final target = '/storage/emulated/0/Download/${baseName(e['name'])}';
-      setState(() => loading = true);
+      final target =
+          '${ExplorerWorkspaceSession.instance.root}/Download/${baseName(e['name'])}';
+      if (showFailure) setState(() => busy = true);
       await request(
         'get',
         remote: e['path'],
@@ -164,9 +242,10 @@ class _RemoteBrowserState extends State<RemoteBrowser> {
             .showSnackBar(SnackBar(content: Text('Saved $target')));
       }
     } catch (e) {
+      if (!showFailure) rethrow;
       if (mounted) showError(context, e);
     } finally {
-      if (mounted) setState(() => loading = false);
+      if (mounted && showFailure) setState(() => busy = false);
     }
   }
 
@@ -229,7 +308,7 @@ class _RemoteBrowserState extends State<RemoteBrowser> {
       final e = picks.first;
       await showDialog<void>(
         context: context,
-        builder: (dialog) => AlertDialog(
+        builder: (dialog) => ExplorerDialog(
           title: Text(e['name']),
           content: SelectableText(
             '${profile['protocol']} · ${profile['host']}\n${e['path']}\n${e['directory'] == true ? 'Folder' : sizeLabel(e['size'])}\n${dateLabel(e['modified'] ?? 0)}',
@@ -244,6 +323,24 @@ class _RemoteBrowserState extends State<RemoteBrowser> {
       );
       return;
     }
+    String? destinationFolder;
+    if (action == 'Copy to' || action == 'Move to') {
+      destinationFolder = await askText(
+        context,
+        action,
+        label: 'Destination folder',
+        initial: path,
+      );
+      if (destinationFolder == null || destinationFolder.trim().isEmpty) return;
+      destinationFolder = destinationFolder.trim();
+      if (!destinationFolder.startsWith('/')) {
+        if (mounted) {
+          showError(context, Exception('Enter an absolute remote folder path'));
+        }
+        return;
+      }
+    }
+    if (!mounted) return;
     String? rename;
     if (action == 'Rename') {
       rename = await askText(context, 'Rename', initial: picks.first['name']);
@@ -260,7 +357,15 @@ class _RemoteBrowserState extends State<RemoteBrowser> {
       for (final e in picks) {
         switch (action) {
           case 'Download':
-            await download(e);
+            await download(e, showFailure: false);
+          case 'Copy to':
+          case 'Move to':
+            await request(
+              action == 'Copy to' ? 'copy' : 'rename',
+              remote: e['path'],
+              destination: join(e['name'], destinationFolder),
+              directory: e['directory'] == true,
+            );
           case 'Delete':
             await request('delete', remote: e['path']);
           case 'Rename':
@@ -286,6 +391,9 @@ class _RemoteBrowserState extends State<RemoteBrowser> {
         : selected.add(e['path']);
   });
   void navigate(String target) {
+    if (target == path) return;
+    final seen = history.lastIndexOf(path);
+    if (seen >= 0) history.removeRange(seen, history.length);
     history.add(path);
     path = target;
     selected.clear();
@@ -297,8 +405,18 @@ class _RemoteBrowserState extends State<RemoteBrowser> {
       setState(() => selected.clear());
       return;
     }
+    if (searching) {
+      search.clear();
+      setState(() => searching = false);
+      return;
+    }
     if (history.isNotEmpty) {
       path = history.removeLast();
+      load();
+    } else if (beganAtServer && !shares) {
+      profile['share'] = '';
+      path = '/';
+      selected.clear();
       load();
     } else if (widget.windowId != null) {
       ExplorerWorkspaceSession.instance.activate(null);
@@ -309,22 +427,37 @@ class _RemoteBrowserState extends State<RemoteBrowser> {
 
   Future<void> locations() async => showDialog<void>(
     context: context,
-    builder: (dialog) => SimpleDialog(
+    builder: (dialog) => ExplorerChoiceDialog(
       title: Text(profile['name']),
       children: [
+        if (beganAtServer && !shares)
+          ExplorerChoiceTile(
+            icon: Icons.folder_shared_outlined,
+            label: 'Shared folders',
+            onTap: () {
+              Navigator.pop(dialog);
+              profile['share'] = '';
+              path = '/';
+              history.clear();
+              selected.clear();
+              load();
+            },
+          ),
         for (final location in {'/', ...history.reversed, path})
-          SimpleDialogOption(
-            onPressed: () {
+          ExplorerChoiceTile(
+            icon: Icons.folder_outlined,
+            label: location,
+            onTap: () {
               Navigator.pop(dialog);
               navigate(location);
             },
-            child: Text(location),
           ),
       ],
     ),
   );
   @override
   void dispose() {
+    loadVersion++;
     search.dispose();
     super.dispose();
   }
@@ -342,20 +475,35 @@ class _RemoteBrowserState extends State<RemoteBrowser> {
     Widget tool(IconData icon, String label, VoidCallback tap) =>
         ExplorerAction(icon: icon, label: label, onTap: busy ? () {} : tap);
     return ExplorerPane(
+      busy: busy,
+      interceptBack: searching,
+      searchHeader: searching
+          ? ExplorerSearchHeader(
+              controller: search,
+              hint: 'Search this folder',
+              onChanged: (_) => setState(() {}),
+              onClose: () {
+                search.clear();
+                setState(() => searching = false);
+              },
+            )
+          : null,
       settings: widget.settings,
       windowId: widget.windowId,
       selecting: selected.isNotEmpty,
+      onSelectAll: () => setState(
+        () => selected.addAll(visible.map((e) => e['path'] as String)),
+      ),
+      onClearSelection: () => setState(() => selected.clear()),
       onBack: back,
       onTitle: locations,
-      title: Text(
-        selected.isNotEmpty
-            ? '${selected.length}/${rows.length}'
-            : path == '/'
-            ? profile['name']
-            : baseName(path),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
+      title: selected.isNotEmpty
+          ? Text('${selected.length}/${rows.length}')
+          : ExplorerBreadcrumbs(
+              entries: breadcrumbs,
+              onNavigate: navigate,
+              onCurrent: locations,
+            ),
       actions: selected.isNotEmpty
           ? [
               tool(
@@ -373,11 +521,16 @@ class _RemoteBrowserState extends State<RemoteBrowser> {
                 'Delete',
                 () => action('Delete', picks),
               ),
-              tool(
-                Icons.info_outline,
-                'Properties',
-                () => action('Properties', picks),
-              ),
+              tool(Icons.info_outline, 'More', () async {
+                final choice = await showExplorerActionMenu(context, [
+                  'Properties',
+                  if (profile['protocol'] != 'Bluetooth') ...[
+                    'Copy to',
+                    'Move to',
+                  ],
+                ]);
+                if (choice != null && mounted) await action(choice, picks);
+              }),
               tool(
                 Icons.filter_none,
                 'Windows',
@@ -385,7 +538,12 @@ class _RemoteBrowserState extends State<RemoteBrowser> {
               ),
             ]
           : [
-              tool(Icons.add, 'New', create),
+              ExplorerAction(
+                icon: Icons.add,
+                label: 'New',
+                enabled: !busy && !shares,
+                onTap: create,
+              ),
               tool(
                 Icons.search,
                 'Search',
@@ -401,28 +559,6 @@ class _RemoteBrowserState extends State<RemoteBrowser> {
             ],
       body: Column(
         children: [
-          if (busy) const LinearProgressIndicator(minHeight: 2),
-          if (searching)
-            Padding(
-              padding: const EdgeInsets.all(10),
-              child: TextField(
-                controller: search,
-                autofocus: true,
-                onChanged: (_) => setState(() {}),
-                decoration: InputDecoration(
-                  hintText: 'Search this folder',
-                  prefixIcon: const Icon(Icons.search),
-                  suffixIcon: IconButton(
-                    tooltip: 'Close search',
-                    onPressed: () {
-                      search.clear();
-                      setState(() => searching = false);
-                    },
-                    icon: const Icon(Icons.close),
-                  ),
-                ),
-              ),
-            ),
           Row(
             children: [
               IconButton(
@@ -445,7 +581,7 @@ class _RemoteBrowserState extends State<RemoteBrowser> {
                 ),
               ),
               TextButton.icon(
-                onPressed: busy ? null : upload,
+                onPressed: busy || shares ? null : upload,
                 icon: const Icon(Icons.upload_outlined, size: 18),
                 label: const Text('Upload', style: TextStyle(fontSize: 12)),
               ),
@@ -473,7 +609,12 @@ class _RemoteBrowserState extends State<RemoteBrowser> {
                     onRefresh: load,
                     child: grid
                         ? GridView.builder(
-                            padding: const EdgeInsets.all(10),
+                            padding: EdgeInsets.fromLTRB(
+                              10,
+                              10,
+                              10,
+                              ExplorerBottomBar.contentBottomPadding(context),
+                            ),
                             gridDelegate:
                                 const SliverGridDelegateWithFixedCrossAxisCount(
                                   crossAxisCount: 4,
@@ -485,9 +626,16 @@ class _RemoteBrowserState extends State<RemoteBrowser> {
                             itemBuilder: (_, i) {
                               final e = visible[i];
                               return InkWell(
-                                onLongPress: () => toggle(e),
+                                onLongPress: shares ? null : () => toggle(e),
                                 onTap: () => selected.isNotEmpty
                                     ? toggle(e)
+                                    : e['share'] != null
+                                    ? setState(() {
+                                        profile['share'] = e['share'];
+                                        path = '/';
+                                        selected.clear();
+                                        load();
+                                      })
                                     : e['directory'] == true
                                     ? navigate(e['path'])
                                     : download(e),
@@ -527,6 +675,11 @@ class _RemoteBrowserState extends State<RemoteBrowser> {
                             },
                           )
                         : ListView.builder(
+                            padding: EdgeInsets.only(
+                              bottom: ExplorerBottomBar.contentBottomPadding(
+                                context,
+                              ),
+                            ),
                             itemCount: visible.length,
                             itemBuilder: (_, i) {
                               final e = visible[i];
@@ -539,9 +692,16 @@ class _RemoteBrowserState extends State<RemoteBrowser> {
                                       ? 'Folder'
                                       : sizeLabel(e['size']),
                                 ),
-                                onLongPress: () => toggle(e),
+                                onLongPress: shares ? null : () => toggle(e),
                                 onTap: () => selected.isNotEmpty
                                     ? toggle(e)
+                                    : e['share'] != null
+                                    ? setState(() {
+                                        profile['share'] = e['share'];
+                                        path = '/';
+                                        selected.clear();
+                                        load();
+                                      })
                                     : e['directory'] == true
                                     ? navigate(e['path'])
                                     : download(e),

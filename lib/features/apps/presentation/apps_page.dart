@@ -1,3 +1,8 @@
+import 'package:yr_file_explorer/shared/widgets/grouped_file_view.dart';
+import 'package:yr_file_explorer/shared/dialogs/explorer_dialog.dart';
+import 'package:yr_file_explorer/shared/widgets/explorer_search_header.dart';
+import 'package:yr_file_explorer/features/workspace/presentation/widgets/explorer_bottom_bar.dart';
+
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -54,9 +59,9 @@ class _AppsPageState extends State<AppsPage> with WidgetsBindingObserver {
   }
 
   String key(Json app) => app['path'];
-  Future<void> load() async {
+  Future<void> load({bool background = false}) async {
     setState(() {
-      loading = true;
+      if (!background) loading = true;
       error = null;
     });
     try {
@@ -74,7 +79,7 @@ class _AppsPageState extends State<AppsPage> with WidgetsBindingObserver {
       if (mounted) {
         setState(() {
           apps = rows;
-          selected.removeWhere((p) => !rows.any((a) => key(a) == p));
+          selected.retainAll(rows.map(key).toSet());
           loading = false;
         });
       }
@@ -89,6 +94,7 @@ class _AppsPageState extends State<AppsPage> with WidgetsBindingObserver {
   }
 
   List<Json> get rows {
+    final query = search.text.toLowerCase();
     final result = apps.where((a) {
       if (filter == 'User Apps' && a['system'] == true) return false;
       if (filter == 'System Apps' && a['system'] != true) return false;
@@ -96,9 +102,7 @@ class _AppsPageState extends State<AppsPage> with WidgetsBindingObserver {
       if (filter == 'Installed in sdcard' && a['external'] != true) {
         return false;
       }
-      return '${a['name']} ${a['package']}'.toLowerCase().contains(
-        search.text.toLowerCase(),
-      );
+      return '${a['name']} ${a['package']}'.toLowerCase().contains(query);
     }).toList();
     result.sort((a, b) {
       final v = switch (sort) {
@@ -121,7 +125,7 @@ class _AppsPageState extends State<AppsPage> with WidgetsBindingObserver {
   Future<void> chooseFilter() async {
     final value = await showDialog<String>(
       context: context,
-      builder: (dialog) => SimpleDialog(
+      builder: (dialog) => ExplorerChoiceDialog(
         title: const Center(child: Text('History')),
         children: [
           for (final name in [
@@ -168,7 +172,7 @@ class _AppsPageState extends State<AppsPage> with WidgetsBindingObserver {
       final a = picks.first;
       await showDialog<void>(
         context: context,
-        builder: (dialog) => AlertDialog(
+        builder: (dialog) => ExplorerDialog(
           title: Text(a['name']),
           content: SingleChildScrollView(
             child: SelectableText(
@@ -281,6 +285,15 @@ class _AppsPageState extends State<AppsPage> with WidgetsBindingObserver {
     sort: sort,
     descending: descending,
     sorts: const ['Name', 'Size', 'Installed'],
+    groupBy: widget.settings.groupBy,
+    groupDescending: widget.settings.groupDescending,
+    onGroupingChanged: (group, reverse) {
+      setState(() {
+        widget.settings.groupBy = group;
+        widget.settings.groupDescending = reverse;
+      });
+      widget.settings.save();
+    },
     onChanged: (mode, nextSort, nextDescending) => setState(() {
       viewMode = mode;
       grid = mode.endsWith('Icon');
@@ -304,10 +317,24 @@ class _AppsPageState extends State<AppsPage> with WidgetsBindingObserver {
     Widget action(IconData icon, String label, VoidCallback tap) =>
         ExplorerAction(icon: icon, label: label, onTap: busy ? () {} : tap);
     return ExplorerPane(
-      onActivate: load,
+      busy: busy,
+      onActivate: () => load(background: true),
+      searchHeader: searching
+          ? ExplorerSearchHeader(
+              controller: search,
+              hint: 'Search applications',
+              onChanged: (_) => setState(() {}),
+              onClose: () {
+                search.clear();
+                setState(() => searching = false);
+              },
+            )
+          : null,
       settings: widget.settings,
       windowId: widget.windowId,
       selecting: selected.isNotEmpty,
+      onSelectAll: () => setState(() => selected.addAll(visible.map(key))),
+      onClearSelection: () => setState(() => selected.clear()),
       interceptBack: searching,
       onBack: selected.isNotEmpty
           ? () => setState(() => selected.clear())
@@ -362,43 +389,6 @@ class _AppsPageState extends State<AppsPage> with WidgetsBindingObserver {
             ],
       body: Column(
         children: [
-          if (busy) const LinearProgressIndicator(minHeight: 2),
-          if (searching)
-            Padding(
-              padding: const EdgeInsets.all(10),
-              child: TextField(
-                controller: search,
-                autofocus: true,
-                onChanged: (_) => setState(() {}),
-                decoration: InputDecoration(
-                  hintText: 'Search applications',
-                  prefixIcon: const Icon(Icons.search),
-                  suffixIcon: IconButton(
-                    tooltip: 'Close search',
-                    onPressed: () {
-                      search.clear();
-                      setState(() => searching = false);
-                    },
-                    icon: const Icon(Icons.close),
-                  ),
-                ),
-              ),
-            ),
-          if (selected.isNotEmpty)
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                TextButton(
-                  onPressed: () =>
-                      setState(() => selected.addAll(visible.map(key))),
-                  child: const Text('Select all'),
-                ),
-                TextButton(
-                  onPressed: () => setState(() => selected.clear()),
-                  child: const Text('Clear selection'),
-                ),
-              ],
-            ),
           Expanded(
             child: loading
                 ? const Center(child: CircularProgressIndicator())
@@ -420,100 +410,135 @@ class _AppsPageState extends State<AppsPage> with WidgetsBindingObserver {
                 : RefreshIndicator(
                     onRefresh: load,
                     child: grid
-                        ? GridView.builder(
-                            padding: const EdgeInsets.all(10),
-                            gridDelegate:
-                                SliverGridDelegateWithFixedCrossAxisCount(
-                                  crossAxisCount: explorerGridColumns(viewMode),
-                                  childAspectRatio: .83,
-                                  crossAxisSpacing: 6,
-                                  mainAxisSpacing: 8,
-                                ),
-                            itemCount: visible.length,
-                            itemBuilder: (_, i) {
-                              final a = visible[i];
-                              return InkWell(
-                                onLongPress: () => toggle(a),
-                                onTap: () => selected.isEmpty
-                                    ? run('Open', [a])
-                                    : toggle(a),
-                                borderRadius: BorderRadius.circular(10),
-                                child: Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    color: selected.contains(key(a))
-                                        ? primaryBlue.withValues(alpha: .12)
-                                        : null,
-                                    borderRadius: BorderRadius.circular(10),
+                        ? LayoutBuilder(
+                            builder: (context, constraints) => GroupedFileView(
+                              entries: visible,
+                              groupBy: widget.settings.groupBy,
+                              descending: widget.settings.groupDescending,
+                              child: GridView.builder(
+                                padding: EdgeInsets.fromLTRB(
+                                  10,
+                                  10,
+                                  10,
+                                  ExplorerBottomBar.contentBottomPadding(
+                                    context,
                                   ),
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Stack(
-                                        clipBehavior: Clip.none,
+                                ),
+                                gridDelegate:
+                                    SliverGridDelegateWithFixedCrossAxisCount(
+                                      crossAxisCount: explorerGridColumns(
+                                        viewMode,
+                                        width: constraints.maxWidth,
+                                      ),
+                                      mainAxisExtent:
+                                          explorerGlyphSize(viewMode) +
+                                          24 +
+                                          explorerGridLabelHeight(context),
+                                      crossAxisSpacing: 6,
+                                      mainAxisSpacing: 8,
+                                    ),
+                                itemCount: visible.length,
+                                itemBuilder: (_, i) {
+                                  final a = visible[i];
+                                  return InkWell(
+                                    onLongPress: () => toggle(a),
+                                    onTap: () => selected.isEmpty
+                                        ? run('Open', [a])
+                                        : toggle(a),
+                                    borderRadius: BorderRadius.circular(10),
+                                    child: Container(
+                                      padding: const EdgeInsets.all(8),
+                                      decoration: BoxDecoration(
+                                        color: selected.contains(key(a))
+                                            ? primaryBlue.withValues(alpha: .12)
+                                            : null,
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                      child: Column(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
                                         children: [
-                                          icon(
-                                            a,
-                                            size: explorerGlyphSize(viewMode),
+                                          Stack(
+                                            clipBehavior: Clip.none,
+                                            children: [
+                                              icon(
+                                                a,
+                                                size: explorerGlyphSize(
+                                                  viewMode,
+                                                ),
+                                              ),
+                                              if (selected.contains(key(a)))
+                                                const Positioned(
+                                                  right: -4,
+                                                  bottom: -4,
+                                                  child: Icon(
+                                                    Icons.check_circle,
+                                                    color: primaryBlue,
+                                                    size: 19,
+                                                  ),
+                                                ),
+                                            ],
                                           ),
-                                          if (selected.contains(key(a)))
-                                            const Positioned(
-                                              right: -4,
-                                              bottom: -4,
-                                              child: Icon(
-                                                Icons.check_circle,
-                                                color: primaryBlue,
-                                                size: 19,
+                                          const SizedBox(height: 8),
+                                          SizedBox(
+                                            height: explorerGridLabelHeight(
+                                              context,
+                                            ),
+                                            child: Text(
+                                              a['name'],
+                                              textAlign: TextAlign.center,
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                fontSize: 11,
+                                                height: 1.25,
                                               ),
                                             ),
+                                          ),
                                         ],
                                       ),
-                                      const SizedBox(height: 8),
-                                      SizedBox(
-                                        height: 32,
-                                        child: Text(
-                                          a['name'],
-                                          textAlign: TextAlign.center,
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                            fontSize: 11,
-                                            height: 1.25,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              );
-                            },
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
                           )
-                        : ListView.builder(
-                            itemCount: visible.length,
-                            itemBuilder: (_, i) {
-                              final a = visible[i];
-                              return ListTile(
-                                selected: selected.contains(key(a)),
-                                dense: viewMode.startsWith('Small'),
-                                leading: icon(a, size: 38),
-                                title: Text(a['name']),
-                                subtitle: viewMode.endsWith('Detail')
-                                    ? Text(
-                                        '${a['version']} · ${sizeLabel(a['size'])}',
-                                        style: const TextStyle(fontSize: 11),
-                                      )
-                                    : null,
-                                onLongPress: () => toggle(a),
-                                onTap: () => selected.isEmpty
-                                    ? run('Open', [a])
-                                    : toggle(a),
-                                trailing: IconButton(
-                                  tooltip: 'More',
-                                  onPressed: () => more([a]),
-                                  icon: const Icon(Icons.more_vert),
+                        : GroupedFileView(
+                            entries: visible,
+                            groupBy: widget.settings.groupBy,
+                            descending: widget.settings.groupDescending,
+                            child: ListView.builder(
+                              padding: EdgeInsets.only(
+                                bottom: ExplorerBottomBar.contentBottomPadding(
+                                  context,
                                 ),
-                              );
-                            },
+                              ),
+                              itemCount: visible.length,
+                              itemBuilder: (_, i) {
+                                final a = visible[i];
+                                return ListTile(
+                                  selected: selected.contains(key(a)),
+                                  dense: viewMode.startsWith('Small'),
+                                  leading: icon(a, size: 38),
+                                  title: Text(a['name']),
+                                  subtitle: viewMode.endsWith('Detail')
+                                      ? Text(
+                                          '${a['version']} · ${sizeLabel(a['size'])}',
+                                          style: const TextStyle(fontSize: 11),
+                                        )
+                                      : null,
+                                  onLongPress: () => toggle(a),
+                                  onTap: () => selected.isEmpty
+                                      ? run('Open', [a])
+                                      : toggle(a),
+                                  trailing: IconButton(
+                                    tooltip: 'More',
+                                    onPressed: () => more([a]),
+                                    icon: const Icon(Icons.more_vert),
+                                  ),
+                                );
+                              },
+                            ),
                           ),
                   ),
           ),

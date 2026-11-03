@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('run','debug','release','analyze','test','doctor')]
+    [ValidateSet('run','debug','release','analyze','doctor')]
     [string]$Task = 'run',
     [string]$Device = ''
 )
@@ -24,11 +24,6 @@ try {
         'debug' { & $flutterExecutable build apk --debug }
         'release' { & $flutterExecutable build apk --release --split-per-abi }
         'analyze' { & $flutterExecutable analyze }
-        'test' {
-            & $flutterExecutable test
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            & (Join-Path $projectRoot 'tools/test-native.ps1')
-        }
         'doctor' { & $flutterExecutable doctor -v }
     }
     $resultCode = $LASTEXITCODE

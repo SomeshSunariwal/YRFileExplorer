@@ -1,29 +1,39 @@
+import 'package:yr_file_explorer/core/utils/file_sort.dart';
+import 'package:yr_file_explorer/shared/dialogs/operation_progress_dialog.dart';
+import 'package:yr_file_explorer/shared/dialogs/explorer_dialog.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+import 'widgets/analysis_progress_dialog.dart';
 
 import 'package:yr_file_explorer/core/models/json.dart';
 import 'package:yr_file_explorer/core/platform/native_bridge.dart';
 import 'package:yr_file_explorer/core/settings/app_settings.dart';
 import 'package:yr_file_explorer/core/theme/file_categories.dart';
 import 'package:yr_file_explorer/core/utils/file_format.dart';
-import 'package:yr_file_explorer/features/analysis/presentation/storage_analysis_page.dart';
 import 'package:yr_file_explorer/features/storage/presentation/dialogs/storage_locations_dialog.dart';
 import 'package:yr_file_explorer/features/workspace/application/workspace_session.dart';
 import 'package:yr_file_explorer/features/workspace/presentation/dialogs/windows_dialog.dart';
 import 'package:yr_file_explorer/features/workspace/presentation/widgets/explorer_action.dart';
 import 'package:yr_file_explorer/features/workspace/presentation/widgets/explorer_pane.dart';
-import 'package:yr_file_explorer/shared/widgets/breadcrumbs.dart';
+import 'package:yr_file_explorer/features/workspace/presentation/widgets/explorer_bottom_bar.dart';
 import 'package:yr_file_explorer/shared/widgets/empty_state.dart';
-import 'package:yr_file_explorer/shared/widgets/file_glyph.dart';
+import 'package:yr_file_explorer/features/analysis/presentation/widgets/analysis_usage_row.dart';
+import 'package:yr_file_explorer/features/files/application/file_clipboard.dart';
+import 'package:yr_file_explorer/shared/dialogs/input_dialogs.dart';
 
 class SdCardAnalyst extends StatefulWidget {
   final AppSettings settings;
+  final FileClipboard clipboard;
   final int? windowId;
   final String path;
   const SdCardAnalyst({
     super.key,
     required this.settings,
+    required this.clipboard,
     required this.path,
     this.windowId,
   });
@@ -34,8 +44,14 @@ class SdCardAnalyst extends StatefulWidget {
 class _SdCardAnalystState extends State<SdCardAnalyst> {
   late String path;
   String id = '', sort = 'Size';
+  final selected = <String>{};
   bool descending = true, scanning = true;
-  Json? result, progress, storage;
+  Json? result, storage;
+  final progressDialog = AnalysisProgressDialog();
+  Json? sortedResult;
+  List<Json>? sortedRows;
+  String? cachedSort;
+  bool? cachedDescending;
   String? error;
   StreamSubscription<Json>? subscription;
   @override
@@ -43,50 +59,76 @@ class _SdCardAnalystState extends State<SdCardAnalyst> {
     super.initState();
     path = widget.path;
     subscription = Native.events.listen((e) {
-      if (mounted && e['id'] == id) setState(() => progress = e);
+      if (mounted && e['id'] == id) progressDialog.update(e);
     }, onError: (_) {});
-    scan();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) scan();
+    });
   }
 
   @override
   void dispose() {
+    progressDialog.dispose();
     subscription?.cancel();
     Native.call('cancelAnalysis', {'id': id});
     super.dispose();
   }
 
-  Future<void> scan() async {
-    await Native.call('cancelAnalysis', {'id': id});
-    if (!mounted) return;
+  Future<void> scan({String? target}) async {
+    if (scanning && id.isNotEmpty) return;
+    final next = target ?? path;
     final job = 'sd-${DateTime.now().microsecondsSinceEpoch}';
     setState(() {
       id = job;
+      selected.clear();
       scanning = true;
       error = null;
-      progress = null;
     });
+    if (widget.windowId == null ||
+        ExplorerWorkspaceSession.instance.activeId == widget.windowId) {
+      progressDialog.show(
+        context,
+        title: 'Analyzing folder',
+        folder: next,
+        onCancel: () => Native.call('cancelAnalysis', {'id': job}),
+      );
+    }
     try {
       final values = await Future.wait([
         Native.call<Map>('analyze', {
-          'path': path,
+          'path': next,
           'id': job,
           'duplicates': false,
         }),
-        Native.call<Map>('storageStats', {'path': path}),
+        Native.call<Map>('storageStats', {'path': next}),
       ]);
       if (mounted && id == job) {
         setState(() {
+          path = next;
           result = Map<String, dynamic>.from(values[0]!);
           storage = Map<String, dynamic>.from(values[1]!);
-          scanning = false;
         });
+        if (widget.windowId != null) {
+          ExplorerWorkspaceSession.instance.updatePath(widget.windowId!, path);
+        }
       }
     } catch (e) {
       if (mounted && id == job) {
-        setState(() {
-          error = e.toString();
-          scanning = false;
-        });
+        final cancelled = e is PlatformException && e.code == 'CANCELLED';
+        if (result == null) {
+          setState(
+            () => error = cancelled
+                ? 'Analysis cancelled. Tap Refresh to try again.'
+                : e.toString(),
+          );
+        } else if (!cancelled) {
+          showError(context, e);
+        }
+      }
+    } finally {
+      if (id == job) {
+        progressDialog.close();
+        if (mounted) setState(() => scanning = false);
       }
     }
   }
@@ -94,38 +136,34 @@ class _SdCardAnalystState extends State<SdCardAnalyst> {
   void go(String value) {
     final session = ExplorerWorkspaceSession.instance;
     value = session.storagePath(value);
-    if (!session.containsStoragePath(value)) return;
-    if (value == path) return;
-    setState(() => path = value);
-    if (widget.windowId != null) {
-      ExplorerWorkspaceSession.instance.updatePath(widget.windowId!, path);
+    if (!session.containsStoragePath(value) || value == path || scanning) {
+      return;
     }
-    scan();
+    scan(target: value);
   }
 
   List<Json> get rows {
-    final entries = jsonRows(result?['children']);
-    entries.sort((a, b) {
-      final order = switch (sort) {
-        'Name' => a['name'].toString().toLowerCase().compareTo(
-          b['name'].toString().toLowerCase(),
-        ),
-        'Files' => ((a['files'] ?? 0) as num).compareTo(
-          (b['files'] ?? 0) as num,
-        ),
-        'Folders' => ((a['folders'] ?? 0) as num).compareTo(
-          (b['folders'] ?? 0) as num,
-        ),
-        _ => ((a['size'] ?? 0) as num).compareTo((b['size'] ?? 0) as num),
-      };
-      return descending ? -order : order;
-    });
-    return entries;
+    if (sortedRows != null &&
+        identical(sortedResult, result) &&
+        cachedSort == sort &&
+        cachedDescending == descending) {
+      return sortedRows!;
+    }
+    final entries = sortedFileEntries(
+      jsonRows(result?['children']),
+      sort: sort,
+      descending: descending,
+    );
+    sortedResult = result;
+    cachedSort = sort;
+    cachedDescending = descending;
+    return sortedRows = entries;
   }
 
   void sortMenu() => showDialog<void>(
     context: context,
-    builder: (dialog) => SimpleDialog(
+    builder: (dialog) => ExplorerChoiceDialog(
+      maxWidth: 280,
       title: const Center(child: Text('Sort')),
       children: [
         for (final name in ['Name', 'Size', 'Files', 'Folders'])
@@ -143,6 +181,17 @@ class _SdCardAnalystState extends State<SdCardAnalyst> {
             },
             child: Row(
               children: [
+                Icon(
+                  switch (name) {
+                    'Name' => Icons.sort_by_alpha,
+                    'Size' => Icons.data_usage,
+                    'Files' => Icons.insert_drive_file_outlined,
+                    _ => Icons.folder_outlined,
+                  },
+                  size: 20,
+                  color: primaryBlue,
+                ),
+                const SizedBox(width: 12),
                 Expanded(child: Text(name)),
                 if (sort == name)
                   Icon(
@@ -156,40 +205,79 @@ class _SdCardAnalystState extends State<SdCardAnalyst> {
       ],
     ),
   );
-  void details([String? target]) => Navigator.push(
-    context,
-    MaterialPageRoute<void>(
-      builder: (_) => AnalysisPage(
-        path: target ?? path,
-        onBrowse: (value) => ExplorerWorkspaceSession.instance.open(value),
-      ),
-    ),
+  void copySelection(bool cut) {
+    widget.clipboard.put(selected.toList(), cut);
+    setState(() => selected.clear());
+  }
+
+  Future<void> deleteSelection() async {
+    final recycle = widget.settings.recycle;
+    if (!await confirm(
+      context,
+      recycle ? 'Move to Recycle Bin?' : 'Permanently delete?',
+      '${selected.length} selected items ${recycle ? 'will be moved to the bin.' : 'will be permanently deleted.'}',
+      action: recycle ? 'Move' : 'Delete',
+    )) {
+      return;
+    }
+    if (!mounted) return;
+    try {
+      await runFileOperation(
+        context,
+        widget.settings.recycle
+            ? 'Moving files to Recycle Bin…'
+            : 'Deleting files…',
+        () => Native.call('delete', {
+          'paths': selected.toList(),
+          'permanent': !recycle,
+        }),
+      );
+      selected.clear();
+      await scan();
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  void details([String? target]) => ExplorerWorkspaceSession.instance.open(
+    target ?? path,
+    page: 'storage_analysis',
+    title: 'Folder Analysis',
   );
   @override
   Widget build(BuildContext context) {
     final entries = rows, total = (storage?['total'] as num? ?? 0).toDouble();
-    final largest = entries.fold<double>(
-      0,
-      (value, e) => (e['size'] as num).toDouble() > value
-          ? (e['size'] as num).toDouble()
-          : value,
+    final analyzedTotal = (result?['bytes'] as num? ?? 0).toDouble();
+    final free = (storage?['free'] as num? ?? 0).toDouble().clamp(
+      0.0,
+      total > 0 ? total : 0.0,
     );
-    Widget stat(String label, num value, Color color) => Expanded(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-        child: Text(
-          '$label: ${sizeLabel(value)}',
-          style: TextStyle(fontSize: 10, color: color),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-      ),
-    );
+    final used = (total - free).clamp(0.0, total > 0 ? total : 0.0);
+    final usedFraction = total > 0 ? (used / total).clamp(0.0, 1.0) : 0.0;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    const usedColor = Color(0xffd32f2f);
+    const freeColor = Color(0xff16843d);
+    final capacityHeight =
+        22 + (MediaQuery.textScalerOf(context).scale(11) - 11).clamp(0.0, 20.0);
+    // Remove scroll clearance and the navigation's transparent top inset so
+    // the capsule meets its visible surface, with a narrower secondary width.
+    final capacityBottom = ExplorerBottomBar.contentBottomPadding(context) - 20;
     return ExplorerPane(
+      extendBody: true,
       settings: widget.settings,
       windowId: widget.windowId,
+      selecting: selected.isNotEmpty,
+      onSelectAll: () => setState(
+        () => selected.addAll(entries.map((e) => e['path'] as String)),
+      ),
+      onClearSelection: () => setState(() => selected.clear()),
       onBack: () {
-        if (path != widget.path &&
+        if (selected.isNotEmpty) {
+          setState(() => selected.clear());
+          return;
+        }
+        if (path !=
+                ExplorerWorkspaceSession.instance.volumeFor(path)?['path'] &&
             ExplorerWorkspaceSession.instance.containsStoragePath(
               parentPath(path),
             )) {
@@ -199,222 +287,242 @@ class _SdCardAnalystState extends State<SdCardAnalyst> {
         }
       },
       onTitle: () => showStorageLocations(context, onSelect: go),
-      title: ExplorerBreadcrumbs(
-        entries: ExplorerWorkspaceSession.instance.breadcrumbsFor(path),
-        onNavigate: go,
-        onCurrent: () => showStorageLocations(context, onSelect: go),
-      ),
-      actions: [
-        ExplorerAction(
-          icon: Icons.bar_chart,
-          label: 'Directory Analyze',
-          onTap: () => details(),
-        ),
-        ExplorerAction(
-          icon: scanning ? Icons.close : Icons.refresh,
-          label: scanning ? 'Cancel' : 'Refresh',
-          onTap: scanning
-              ? () => Native.call('cancelAnalysis', {'id': id})
-              : scan,
-        ),
-        ExplorerAction(
-          icon: Icons.sort_by_alpha,
-          label: 'Sort',
-          onTap: sortMenu,
-        ),
-        ExplorerAction(
-          icon: Icons.filter_none,
-          label: 'Windows',
-          onTap: () => showExplorerWindows(context),
-        ),
-      ],
-      body: Column(
-        children: [
-          Container(
-            color: Theme.of(context).colorScheme.surfaceContainerHighest,
-            padding: const EdgeInsets.fromLTRB(63, 8, 17, 8),
-            child: const Row(
-              children: [
-                Expanded(child: Text('Size', style: TextStyle(fontSize: 11))),
-                Expanded(
-                  child: Text(
-                    'File/SD',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 11),
-                  ),
-                ),
-                Expanded(
-                  child: Text(
-                    'File/Folder',
-                    textAlign: TextAlign.right,
-                    style: TextStyle(fontSize: 11),
-                  ),
-                ),
-              ],
+      title: selected.isNotEmpty
+          ? Text('${selected.length}/${entries.length}')
+          : const Text(
+              'Storage Analyzer',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
+      actions: selected.isNotEmpty
+          ? [
+              ExplorerAction(
+                icon: Icons.copy_outlined,
+                label: 'Copy',
+                onTap: () => copySelection(false),
+              ),
+              ExplorerAction(
+                icon: Icons.content_cut,
+                label: 'Cut',
+                onTap: () => copySelection(true),
+              ),
+              ExplorerAction(
+                icon: Icons.delete_outline,
+                label: 'Delete',
+                onTap: deleteSelection,
+              ),
+              ExplorerAction(
+                icon: Icons.select_all,
+                label: 'Select all',
+                onTap: () => setState(
+                  () =>
+                      selected.addAll(entries.map((e) => e['path'] as String)),
+                ),
+              ),
+              ExplorerAction(
+                icon: Icons.filter_none,
+                label: 'Windows',
+                onTap: () => showExplorerWindows(context),
+              ),
+            ]
+          : [
+              ExplorerAction(
+                icon: Icons.bar_chart,
+                label: 'Analyze',
+                onTap: () => details(),
+              ),
+              ExplorerAction(
+                icon: scanning ? Icons.close : Icons.refresh,
+                label: scanning ? 'Cancel' : 'Refresh',
+                onTap: scanning
+                    ? () => Native.call('cancelAnalysis', {'id': id})
+                    : scan,
+              ),
+              ExplorerAction(
+                icon: Icons.sort_by_alpha,
+                label: 'Sort',
+                onTap: sortMenu,
+              ),
+              ExplorerAction(
+                icon: Icons.filter_none,
+                label: 'Windows',
+                onTap: () => showExplorerWindows(context),
+              ),
+            ],
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          Column(
+            children: [
+              Container(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                padding: const EdgeInsets.fromLTRB(68, 4, 24, 4),
+                child: const Row(
+                  children: [
+                    Expanded(
+                      child: Text('Size', style: TextStyle(fontSize: 11)),
+                    ),
+                    Expanded(
+                      child: Text(
+                        'Share',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 11),
+                      ),
+                    ),
+                    Expanded(
+                      child: Text(
+                        'Files / Folders',
+                        textAlign: TextAlign.right,
+                        style: TextStyle(fontSize: 11),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: error != null
+                    ? EmptyState(
+                        title: 'Analysis unavailable',
+                        message: error!,
+                        action: TextButton(
+                          onPressed: scan,
+                          child: const Text('Refresh'),
+                        ),
+                      )
+                    : CustomScrollView(
+                        slivers: [
+                          SliverPadding(
+                            padding: EdgeInsets.fromLTRB(
+                              16,
+                              8,
+                              16,
+                              capacityBottom + capacityHeight + 16,
+                            ),
+                            sliver: SliverList.builder(
+                              itemCount: entries.length,
+                              itemBuilder: (_, i) {
+                                final e = entries[i];
+                                return Padding(
+                                  padding: EdgeInsets.only(
+                                    bottom: i == entries.length - 1 ? 0 : 6,
+                                  ),
+                                  child: AnalysisUsageRow(
+                                    entry: e,
+                                    total: analyzedTotal,
+                                    selected: selected.contains(e['path']),
+                                    selectionMode: selected.isNotEmpty,
+                                    onToggle: () => setState(
+                                      () => selected.contains(e['path'])
+                                          ? selected.remove(e['path'])
+                                          : selected.add(e['path']),
+                                    ),
+                                    onOpen: () => e['directory'] == true
+                                        ? go(e['path'])
+                                        : Native.call('open', {
+                                            'path': e['path'],
+                                          }).catchError((Object error) {
+                                            if (context.mounted) {
+                                              showError(context, error);
+                                            }
+                                            return null;
+                                          }),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+              ),
+            ],
           ),
-          Expanded(
-            child: scanning
-                ? Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const CircularProgressIndicator(strokeWidth: 3),
-                        const SizedBox(height: 14),
-                        const Text('Analyzing…'),
-                        const SizedBox(height: 8),
-                        Text(
-                          '${sizeLabel(progress?['bytes'] ?? 0)} · ${progress?['files'] ?? 0} files',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey,
-                          ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.all(18),
-                          child: Text(
-                            progress?['current'] ?? path,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(fontSize: 11),
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                : error != null
-                ? EmptyState(
-                    title: 'Analysis unavailable',
-                    message: error!,
-                    action: TextButton(
-                      onPressed: scan,
-                      child: const Text('Refresh'),
-                    ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 5,
-                    ),
-                    itemCount: entries.length,
-                    itemBuilder: (_, i) {
-                      final e = entries[i],
-                          bytes = (e['size'] as num).toDouble();
-                      return InkWell(
-                        onTap: e['directory'] == true
-                            ? () => go(e['path'])
-                            : () => ExplorerWorkspaceSession.instance.open(
-                                parentPath(e['path']),
-                              ),
-                        onLongPress: () =>
-                            details(e['directory'] == true ? e['path'] : path),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 4),
-                          child: Row(
-                            children: [
-                              SizedBox(
-                                width: 46,
-                                child: FileGlyph(e, size: 36),
-                              ),
-                              Expanded(
-                                child: Container(
-                                  padding: const EdgeInsets.fromLTRB(
-                                    9,
-                                    9,
-                                    9,
-                                    6,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .surface,
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        e['name'],
-                                        style: const TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      const SizedBox(height: 5),
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: Text(
-                                              sizeLabel(bytes),
-                                              style: const TextStyle(
-                                                fontSize: 11,
-                                              ),
-                                            ),
-                                          ),
-                                          Expanded(
-                                            child: Text(
-                                              '${total == 0 ? '—' : (bytes / total * 100).toStringAsFixed(2)}%',
-                                              textAlign: TextAlign.center,
-                                              style: const TextStyle(
-                                                fontSize: 11,
-                                              ),
-                                            ),
-                                          ),
-                                          Expanded(
-                                            child: Text(
-                                              '${e['files'] ?? 0} / ${(e['folders'] as num? ?? 0) + (e['directory'] == true ? 1 : 0)}',
-                                              textAlign: TextAlign.right,
-                                              style: const TextStyle(
-                                                fontSize: 11,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 6),
-                                      ClipRRect(
-                                        borderRadius: BorderRadius.circular(2),
-                                        child: LinearProgressIndicator(
-                                          value: largest == 0
-                                              ? 0
-                                              : (bytes / largest).clamp(0, 1),
-                                          minHeight: 3,
-                                          backgroundColor: primaryBlue
-                                              .withValues(alpha: .07),
-                                          color: primaryBlue.withValues(
-                                            alpha: .45,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
+          Positioned(
+            left: 38,
+            right: 38,
+            bottom: capacityBottom,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(999),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: dark ? .24 : .12),
+                    blurRadius: 6,
+                    offset: const Offset(0, 1),
                   ),
-          ),
-          if ((result?['skipped'] as num? ?? 0) > 0)
-            Padding(
-              padding: const EdgeInsets.all(6),
-              child: Text(
-                '${result!['skipped']} inaccessible paths skipped',
-                style: const TextStyle(fontSize: 10, color: Colors.grey),
+                ],
+              ),
+              child: Semantics(
+                label: total > 0
+                    ? 'Storage: ${(usedFraction * 100).toStringAsFixed(1)}% used, ${((1 - usedFraction) * 100).toStringAsFixed(1)}% available'
+                    : 'Storage capacity unavailable',
+                child: Tooltip(
+                  message: total > 0
+                      ? '${sizeLabel(used)} used · ${sizeLabel(free)} available'
+                      : 'Storage capacity unavailable',
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(999),
+                    child: SizedBox(
+                      height: capacityHeight,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          ColoredBox(
+                            color: total > 0
+                                ? freeColor
+                                : Theme.of(context).dividerColor,
+                          ),
+                          if (usedFraction > 0)
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: FractionallySizedBox(
+                                widthFactor: usedFraction,
+                                heightFactor: 1,
+                                child: ColoredBox(color: usedColor),
+                              ),
+                            ),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                            child: Row(
+                              children: [
+                                for (final entry in [
+                                  ('Used', used),
+                                  ('Total', total),
+                                  ('Avail', free),
+                                ])
+                                  Expanded(
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 3,
+                                      ),
+                                      child: FittedBox(
+                                        fit: BoxFit.scaleDown,
+                                        alignment: entry.$1 == 'Used'
+                                            ? Alignment.centerLeft
+                                            : entry.$1 == 'Avail'
+                                            ? Alignment.centerRight
+                                            : Alignment.center,
+                                        child: Text(
+                                          '${entry.$1}: ${sizeLabel(entry.$2)}',
+                                          maxLines: 1,
+                                          style: const TextStyle(
+                                            fontSize: 10.5,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               ),
             ),
-          Row(
-            children: [
-              stat('Total', storage?['total'] ?? 0, primaryBlue),
-              stat('Used', storage?['used'] ?? 0, const Color(0xffdb8060)),
-              stat('Avail', storage?['free'] ?? 0, const Color(0xff5b9b76)),
-            ],
           ),
         ],
       ),

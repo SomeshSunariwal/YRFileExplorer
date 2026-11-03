@@ -33,7 +33,11 @@ class _ExplorerNavigationHeaderState extends State<ExplorerNavigationHeader>
     motion = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 320),
-      value: session.previousActiveId == null ? 0 : 1,
+      value: session.lastSwitchWasSwipe
+          ? (session.activeId == null ? 0 : 1)
+          : session.previousActiveId == null
+          ? 0
+          : 1,
     );
     session.addListener(changed);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -55,9 +59,13 @@ class _ExplorerNavigationHeaderState extends State<ExplorerNavigationHeader>
     if (activeId == session.activeId) return;
     final fromHomepage = activeId == null;
     activeId = session.activeId;
-    // Offstage tabs have muted tickers: reset to the shared source geometry.
-    motion.value = fromHomepage ? 0 : 1;
-    animate();
+    if (session.lastSwitchWasSwipe) {
+      motion.value = session.activeId == null ? 0 : 1;
+    } else {
+      // Offstage tabs have muted tickers: reset to the shared source geometry.
+      motion.value = fromHomepage ? 0 : 1;
+      animate();
+    }
   }
 
   @override
@@ -69,9 +77,15 @@ class _ExplorerNavigationHeaderState extends State<ExplorerNavigationHeader>
 
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
-    animation: motion,
+    animation: Listenable.merge([motion, session.swipeMotion]),
     builder: (context, _) {
-      final progress = motion.value;
+      final swipe = session.swipeMotion.value;
+      final progress = swipe == null
+          ? motion.value
+          : (swipe.fromId == 0 ? 0.0 : 1.0) +
+                ((swipe.toId == 0 ? 0.0 : 1.0) -
+                        (swipe.fromId == 0 ? 0.0 : 1.0)) *
+                    swipe.progress;
       return ExplorerHeaderFrame(
         separators: false,
         child: ClipRect(
@@ -89,41 +103,59 @@ class _ExplorerNavigationHeaderState extends State<ExplorerNavigationHeader>
                   right: left ? null : 0,
                   top: 0,
                   bottom: 0,
-                  width: 48,
+                  width: 49,
                   child: ExcludeSemantics(
                     excluding: widget.homepage,
                     child: IgnorePointer(
-                      ignoring: widget.homepage || motion.isAnimating,
+                      ignoring:
+                          widget.homepage ||
+                          motion.isAnimating ||
+                          swipe != null,
                       child: FractionalTranslation(
                         translation: Offset(
                           (left ? -1 : 1) * (1 - progress),
                           0,
                         ),
-                        child: Opacity(
-                          opacity: progress,
-                          child: IconButton(
-                            tooltip: left ? 'Back' : 'Close window',
-                            onPressed: left ? widget.onBack : widget.onClose,
-                            icon: Icon(
-                              left ? Icons.arrow_back : Icons.cancel_outlined,
-                              size: left ? 22 : 20,
-                              color: primaryBlue,
+                        // Move the button and its divider as one unit. The
+                        // header clip reveals them without a separate fade.
+                        child: Stack(
+                          children: [
+                            Positioned(
+                              left: left ? 0 : null,
+                              right: left ? null : 0,
+                              top: 0,
+                              bottom: 0,
+                              width: 48,
+                              child: IconButton(
+                                tooltip: left ? 'Back' : 'Close window',
+                                onPressed: left
+                                    ? widget.onBack
+                                    : widget.onClose,
+                                icon: Icon(
+                                  left
+                                      ? Icons.arrow_back
+                                      : Icons.cancel_outlined,
+                                  size: left ? 22 : 20,
+                                  color: !left && widget.onClose == null
+                                      ? primaryBlue.withValues(alpha: .3)
+                                      : primaryBlue,
+                                ),
+                              ),
                             ),
-                          ),
+                            Positioned(
+                              left: left ? 48 : null,
+                              right: left ? null : 48,
+                              top: 8,
+                              bottom: 8,
+                              child: Container(
+                                width: 1,
+                                color: explorerLine(context),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
-                  ),
-                ),
-              for (final left in [true, false])
-                Positioned(
-                  left: left ? 48 : null,
-                  right: left ? null : 48,
-                  top: 8,
-                  bottom: 8,
-                  child: Opacity(
-                    opacity: progress,
-                    child: Container(width: 1, color: explorerLine(context)),
                   ),
                 ),
             ],

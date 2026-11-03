@@ -9,10 +9,13 @@ class AppSettings extends ChangeNotifier {
   bool dark = false,
       hidden = false,
       grid = true,
-      folderSizes = true,
+      folderSizes = false,
       recycle = true,
       systemApps = false;
   String sort = 'Name';
+  String groupBy = 'None';
+  bool groupDescending = false;
+  bool backgroundPlayback = false;
   String viewMode = 'Medium Icon';
   bool descending = false;
   List<String> favorites = [], trees = [];
@@ -30,11 +33,17 @@ class AppSettings extends ChangeNotifier {
       grid = m['grid'] != false;
       viewMode =
           m['viewMode'] as String? ?? (grid ? 'Medium Icon' : 'Medium Detail');
-      folderSizes = m['folderSizes'] != false;
+      folderSizes = m['folderSizes'] == true;
       recycle = m['recycle'] != false;
       systemApps = m['systemApps'] == true;
       sort = m['sort'] as String? ?? 'Name';
       descending = m['descending'] == true;
+      final savedGroup = m['groupBy'];
+      groupBy = const ['None', 'Name', 'Size', 'Type'].contains(savedGroup)
+          ? savedGroup as String
+          : 'None';
+      groupDescending = m['groupDescending'] == true;
+      backgroundPlayback = m['backgroundPlayback'] == true;
       favorites = List<String>.from(m['favorites'] ?? []);
       trees = List<String>.from(m['trees'] ?? []);
       connections = jsonRows(m['connections']);
@@ -60,6 +69,9 @@ class AppSettings extends ChangeNotifier {
         'systemApps': systemApps,
         'sort': sort,
         'descending': descending,
+        'groupBy': groupBy,
+        'groupDescending': groupDescending,
+        'backgroundPlayback': backgroundPlayback,
         'favorites': favorites,
         'trees': trees,
         'connections': connections,

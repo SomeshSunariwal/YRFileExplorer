@@ -1,6 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
-    <!-- Networking is used only for user-configured FTP/SFTP/FTPS connections. -->
+    <!-- User-requested connections, web pages and downloads only. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
@@ -12,8 +13,8 @@
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" tools:ignore="QueryAllPackagesPermission" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <application android:label="YR File Explorer" android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round" android:allowBackup="false" android:dataExtractionRules="@xml/data_extraction_rules">
-        <activity android:name="com.explorer.fileexplorer.MainActivity" android:exported="true"
+        android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round" android:usesCleartextTraffic="true" android:allowBackup="false" android:dataExtractionRules="@xml/data_extraction_rules">
+        <activity android:name="com.somesh.yrfileexplorer.MainActivity" android:exported="true"
             android:launchMode="singleTop" android:taskAffinity="" android:theme="@style/LaunchTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true" android:windowSoftInputMode="adjustResize">
@@ -23,10 +24,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <activity android:name="com.explorer.fileexplorer.media.MediaViewerActivity" android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden" android:theme="@android:style/Theme.Material.NoActionBar" />
-        <service android:name="com.explorer.fileexplorer.media.AudioPlaybackService" android:exported="false" android:foregroundServiceType="mediaPlayback" />
-        <provider android:name="com.explorer.fileexplorer.sharing.ShareProvider"
-            android:authorities="com.explorer.fileexplorer.files" android:exported="false"
+        <activity android:name="com.somesh.yrfileexplorer.media.MediaViewerActivity" android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden" android:theme="@android:style/Theme.Material.NoActionBar" />
+        <activity android:name="com.somesh.yrfileexplorer.media.VideoViewerActivity" android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden" android:theme="@android:style/Theme.Material.NoActionBar" />
+        <activity android:name="com.somesh.yrfileexplorer.media.PdfReaderActivity" android:exported="false" android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+        <service android:name="com.somesh.yrfileexplorer.media.AudioPlaybackService" android:exported="false" android:foregroundServiceType="mediaPlayback" />
+        <provider android:name="com.somesh.yrfileexplorer.sharing.ShareProvider"
+            android:authorities="com.somesh.yrfileexplorer.files" android:exported="false"
             android:grantUriPermissions="true" />
         <meta-data android:name="flutterEmbedding" android:value="2" />
     </application>

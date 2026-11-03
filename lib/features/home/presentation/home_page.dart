@@ -1,3 +1,4 @@
+import 'package:yr_file_explorer/shared/widgets/explorer_progress_bar.dart';
 import 'package:flutter/material.dart';
 
 import 'package:yr_file_explorer/features/workspace/presentation/widgets/explorer_navigation_header.dart';
@@ -10,6 +11,7 @@ import 'package:yr_file_explorer/core/theme/explorer_style.dart';
 import 'package:yr_file_explorer/core/theme/file_categories.dart';
 import 'package:yr_file_explorer/core/utils/file_format.dart';
 import 'package:yr_file_explorer/features/files/application/file_clipboard.dart';
+import 'package:yr_file_explorer/features/analysis/domain/analysis_snapshot.dart';
 import 'package:yr_file_explorer/features/settings/presentation/settings_page.dart';
 import 'package:yr_file_explorer/features/storage/presentation/dialogs/storage_locations_dialog.dart';
 import 'package:yr_file_explorer/features/workspace/application/workspace_session.dart';
@@ -36,7 +38,9 @@ class _ExplorerHomeState extends State<ExplorerHome>
   List<Json> volumes = [];
   Map<String, dynamic> categoryCounts = {};
   int countGeneration = 0;
-  bool permission = false, loading = true;
+  Future<void>? pendingRefresh, pendingCounts;
+  String? countPath;
+  bool loading = true;
   String? error;
   String get primary =>
       volumes.isEmpty ? '/storage/emulated/0' : volumes.first['path'];
@@ -49,6 +53,7 @@ class _ExplorerHomeState extends State<ExplorerHome>
 
   @override
   void dispose() {
+    countGeneration++;
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -58,9 +63,14 @@ class _ExplorerHomeState extends State<ExplorerHome>
     if (state == AppLifecycleState.resumed) refresh();
   }
 
-  Future<void> refresh() async {
+  Future<void> refresh() => pendingRefresh ??= refreshStorage().whenComplete(
+    () => pendingRefresh = null,
+  );
+
+  Future<void> refreshStorage() async {
     try {
       final allowed = await Native.call<bool>('permission') ?? false;
+      if (!allowed) return;
       final storage = await Native.rows('volumes');
       ExplorerWorkspaceSession.instance.volumes = storage;
       if (storage.isNotEmpty) {
@@ -68,7 +78,6 @@ class _ExplorerHomeState extends State<ExplorerHome>
       }
       if (mounted) {
         setState(() {
-          permission = allowed;
           volumes = storage;
           loading = false;
           error = null;
@@ -88,14 +97,40 @@ class _ExplorerHomeState extends State<ExplorerHome>
     }
   }
 
-  Future<void> loadCategoryCounts() async {
+  Future<void> loadCategoryCounts() {
+    final target = primary;
+    if (pendingCounts != null && countPath == target) return pendingCounts!;
+    countPath = target;
     final request = ++countGeneration;
+    late final Future<void> task;
+    task = readCategoryCounts(target, request).whenComplete(() {
+      if (identical(pendingCounts, task)) pendingCounts = null;
+    });
+    return pendingCounts = task;
+  }
+
+  Future<void> readCategoryCounts(String target, int request) async {
     try {
-      final counts = await Native.call<Map>('categoryCounts', {
-        'path': primary,
-      });
+      final counts = await Native.call<Map>('categoryCounts', {'path': target});
       if (mounted && request == countGeneration && counts != null) {
         setState(() => categoryCounts = Map<String, dynamic>.from(counts));
+        try {
+          final downloaded = await Native.rows('list', {
+            'path': '$target/Download',
+            'hidden': widget.settings.hidden,
+          });
+          if (mounted && request == countGeneration) {
+            setState(
+              () => categoryCounts['Download'] = downloaded
+                  .where((e) => e['directory'] != true)
+                  .length,
+            );
+          }
+        } catch (_) {
+          if (mounted && request == countGeneration) {
+            setState(() => categoryCounts['Download'] = 0);
+          }
+        }
       }
     } catch (_) {
       /* Keep unavailable counts as a dash. */
@@ -105,9 +140,8 @@ class _ExplorerHomeState extends State<ExplorerHome>
   Future<void> push(Widget page) async {
     await Navigator.push(
       context,
-      MaterialPageRoute<void>(builder: (_) => page),
+      ExplorerPageRoute<void>(builder: (_) => page),
     );
-    refresh();
   }
 
   void browse(
@@ -121,14 +155,9 @@ class _ExplorerHomeState extends State<ExplorerHome>
     recent: recent,
     title: title,
   );
-  void analyze([String? path]) => sessionTool('analysis');
   void sessionTool(String page) =>
       ExplorerWorkspaceSession.instance.onTool?.call(page);
   void settings() => push(SettingsPage(settings: widget.settings));
-  void drawerAction(VoidCallback action) {
-    Navigator.pop(context);
-    action();
-  }
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -138,11 +167,7 @@ class _ExplorerHomeState extends State<ExplorerHome>
       toolbarHeight: explorerTabHeight,
       automaticallyImplyLeading: false,
       titleSpacing: 0,
-      title: ReferenceTabs(
-        local: false,
-        onHome: () {},
-        onLocal: () => browse(primary),
-      ),
+      title: ReferenceTabs(onLocal: () => browse(primary)),
       bottom: PreferredSize(
         preferredSize: const Size.fromHeight(explorerHeaderHeight),
         child: ExplorerNavigationHeader(
@@ -178,14 +203,6 @@ class _ExplorerHomeState extends State<ExplorerHome>
                         padding: const EdgeInsets.all(12),
                         child: Text(error!),
                       ),
-                    if (!permission)
-                      ListTile(
-                        title: const Text('Storage permission'),
-                        trailing: TextButton(
-                          onPressed: () => Native.call('requestPermission'),
-                          child: const Text('Allow'),
-                        ),
-                      ),
                     _panel(
                       Column(
                         children: [
@@ -196,7 +213,7 @@ class _ExplorerHomeState extends State<ExplorerHome>
                               primary: false,
                               physics: const NeverScrollableScrollPhysics(),
                               padding: const EdgeInsets.symmetric(vertical: 8),
-                              crossAxisCount: 6,
+                              crossAxisCount: 4,
                               mainAxisExtent:
                                   (68 +
                                           MediaQuery.textScalerOf(context)
@@ -211,9 +228,19 @@ class _ExplorerHomeState extends State<ExplorerHome>
                                   ('Documents', 'document'),
                                   ('Compressed', 'Archives'),
                                   ('APP', 'app'),
+                                  ('Download', 'download'),
+                                  ('Recent', 'history'),
                                 ])
                                   _entry(e.$1, e.$2, () {
-                                    if (e.$1 == 'APP') {
+                                    if (e.$1 == 'Download') {
+                                      browse('$primary/Download');
+                                    } else if (e.$1 == 'Recent') {
+                                      browse(
+                                        primary,
+                                        recent: true,
+                                        title: 'Recent',
+                                      );
+                                    } else if (e.$1 == 'APP') {
                                       sessionTool('apps');
                                     } else {
                                       browse(
@@ -236,96 +263,28 @@ class _ExplorerHomeState extends State<ExplorerHome>
                       ),
                     ),
                     const SizedBox(height: 10),
-                    _shortcutSection('Local', [
-                      _bookmark(
-                        'Home',
-                        Icons.home_outlined,
-                        () => browse(primary),
-                      ),
-                      _bookmark(
-                        'Download',
-                        Icons.download_outlined,
-                        () => browse('$primary/Download'),
-                      ),
-                      for (final volume in volumes)
-                        _bookmark(
-                          volume['removable'] == true
-                              ? volume['name']
-                              : 'sdcard',
-                          Icons.sd_storage_outlined,
-                          () => browse(volume['path']),
-                        ),
-                    ]),
-                    const SizedBox(height: 10),
                     _shortcutSection('Tools', [
                       _bookmark(
-                        'SD Card Analyst',
+                        'Storage Analyzer',
                         Icons.pie_chart_outline,
                         () => sessionTool('analysis'),
-                      ),
-                      _bookmark(
-                        'System Manager',
-                        Icons.apps,
-                        () => sessionTool('apps'),
                       ),
                       _bookmark(
                         'Recycle Bin',
                         Icons.delete_outline,
                         () => sessionTool('trash'),
                       ),
+                      _bookmark(
+                        'Duplicates',
+                        Icons.copy_all_outlined,
+                        () => ExplorerWorkspaceSession.instance.open(
+                          primary,
+                          page: 'analysis_results',
+                          category: AnalysisKind.duplicates.id,
+                          title: AnalysisKind.duplicates.title,
+                        ),
+                      ),
                     ]),
-                    const SizedBox(height: 10),
-                    _shortcutSection('Bookmarks', [
-                      _bookmark(
-                        'Download',
-                        Icons.download_outlined,
-                        () => browse('$primary/Download'),
-                      ),
-                      _bookmark(
-                        'Documents',
-                        Icons.description_outlined,
-                        () => browse(
-                          primary,
-                          category: 'Documents',
-                          title: 'Documents',
-                        ),
-                      ),
-                      _bookmark(
-                        'Movies',
-                        Icons.movie_outlined,
-                        () => browse(
-                          primary,
-                          category: 'Videos',
-                          title: 'Movies',
-                        ),
-                      ),
-                      _bookmark(
-                        'Recent',
-                        Icons.history,
-                        () => browse(primary, recent: true, title: 'Recent'),
-                      ),
-                      _bookmark(
-                        'Music',
-                        Icons.music_note_outlined,
-                        () =>
-                            browse(primary, category: 'Music', title: 'Music'),
-                      ),
-                      _bookmark(
-                        'Images',
-                        Icons.image_outlined,
-                        () => browse(
-                          primary,
-                          category: 'Images',
-                          title: 'Images',
-                        ),
-                      ),
-                      for (final path in widget.settings.favorites)
-                        _bookmark(
-                          baseName(path),
-                          Icons.folder_outlined,
-                          () => browse(path),
-                        ),
-                    ], initiallyExpanded: true),
                     const SizedBox(height: 10),
                     _shortcutSection('Network', [
                       _bookmark(
@@ -334,31 +293,33 @@ class _ExplorerHomeState extends State<ExplorerHome>
                         () => sessionTool('network'),
                       ),
                       _bookmark(
-                        'LAN',
-                        Icons.computer_outlined,
-                        () => sessionTool('lan'),
-                      ),
-                      _bookmark(
-                        'FTP',
-                        Icons.folder_shared_outlined,
-                        () => sessionTool('ftp'),
-                      ),
-                      _bookmark(
-                        'WebDAV',
-                        Icons.web_asset_outlined,
-                        () => sessionTool('webdav'),
-                      ),
-                      _bookmark(
                         'Bluetooth',
                         Icons.bluetooth,
                         () => sessionTool('bluetooth'),
                       ),
                       _bookmark(
-                        'Net Manager',
-                        Icons.wifi,
-                        () => sessionTool('netmanager'),
+                        'Download Manager',
+                        Icons.downloading_outlined,
+                        () => sessionTool('downloads'),
                       ),
                     ]),
+                    AnimatedBuilder(
+                      animation: widget.settings,
+                      builder: (context, _) {
+                        final favorites = widget.settings.favorites.toSet();
+                        if (favorites.isEmpty) return const SizedBox.shrink();
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 10),
+                          child: _shortcutSection(
+                            'Favorites',
+                            [for (final path in favorites) _favoriteTile(path)],
+                            columns: 5,
+                            tileHeight:
+                                52 + MediaQuery.textScalerOf(context).scale(28),
+                          ),
+                        );
+                      },
+                    ),
                   ],
                 ),
               ),
@@ -401,7 +362,9 @@ class _ExplorerHomeState extends State<ExplorerHome>
   Widget _shortcutSection(
     String title,
     List<Widget> entries, {
-    bool initiallyExpanded = false,
+    bool initiallyExpanded = true,
+    int columns = 3,
+    double tileHeight = 56,
   }) => _panel(
     ExpansionTile(
       key: PageStorageKey('home-section-$title'),
@@ -419,9 +382,9 @@ class _ExplorerHomeState extends State<ExplorerHome>
           padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 3,
-            mainAxisExtent: 56,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: columns,
+            mainAxisExtent: tileHeight,
           ),
           itemCount: entries.length,
           itemBuilder: (_, index) => entries[index],
@@ -430,7 +393,34 @@ class _ExplorerHomeState extends State<ExplorerHome>
     ),
   );
 
+  Widget _favoriteTile(String path) => Semantics(
+    button: true,
+    label: 'Open favorite ${displayFileName(baseName(path))}',
+    child: InkWell(
+      onTap: () => browse(path),
+      hoverColor: Colors.transparent,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+        child: Column(
+          children: [
+            Icon(Icons.folder_rounded, size: 32, color: primaryBlue),
+            const SizedBox(height: 6),
+            Text(
+              displayFileName(baseName(path)),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 11, height: 1.2),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+
   Widget _bookmark(String title, IconData icon, VoidCallback tap) => InkWell(
+    hoverColor: Colors.transparent,
     onTap: tap,
     child: Padding(
       padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -454,28 +444,7 @@ class _ExplorerHomeState extends State<ExplorerHome>
       ExplorerWorkspaceSession.instance.open(primary, search: true);
   void _showWindows() => showExplorerWindows(context);
   Future<void> _newFolder() async {
-    final directory = await showDialog<bool>(
-      context: context,
-      builder: (dialog) => SimpleDialog(
-        title: const Center(child: Text('New')),
-        children: [
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(dialog, false),
-            child: const Padding(
-              padding: EdgeInsets.all(12),
-              child: Text('File'),
-            ),
-          ),
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(dialog, true),
-            child: const Padding(
-              padding: EdgeInsets.all(12),
-              child: Text('Folder'),
-            ),
-          ),
-        ],
-      ),
-    );
+    final directory = await chooseNewItemType(context);
     if (directory == null || !mounted) return;
     final name = await askText(context, directory ? 'New folder' : 'New file');
     if (name == null || name.trim().isEmpty) return;
@@ -504,12 +473,16 @@ class _ExplorerHomeState extends State<ExplorerHome>
             borderRadius: BorderRadius.circular(12),
           ),
           child: Icon(
-            categoryIcons[title == 'Movies'
-                    ? 'Videos'
-                    : title == 'Compressed'
-                    ? 'Archives'
-                    : title] ??
-                Icons.android_rounded,
+            title == 'Download'
+                ? Icons.download_outlined
+                : title == 'Recent'
+                ? Icons.history
+                : categoryIcons[title == 'Movies'
+                          ? 'Videos'
+                          : title == 'Compressed'
+                          ? 'Archives'
+                          : title] ??
+                      Icons.android_rounded,
             color: primaryBlue,
             size: 22,
           ),
@@ -527,14 +500,17 @@ class _ExplorerHomeState extends State<ExplorerHome>
           ),
         ),
         const SizedBox(height: 4),
-        Text(
-          '${categoryCounts[title == 'Movies'
-                  ? 'Videos'
-                  : title == 'Compressed'
-                  ? 'Archives'
-                  : title] ?? '—'}',
-          style: const TextStyle(fontSize: 11, color: Colors.grey),
-        ),
+        if (title == 'Recent')
+          const SizedBox(height: 14)
+        else
+          Text(
+            '${categoryCounts[title == 'Movies'
+                    ? 'Videos'
+                    : title == 'Compressed'
+                    ? 'Archives'
+                    : title] ?? '—'}',
+            style: const TextStyle(fontSize: 11, color: Colors.grey),
+          ),
       ],
     ),
   );
@@ -565,8 +541,10 @@ class _ExplorerHomeState extends State<ExplorerHome>
                 color: primaryBlue.withValues(alpha: .09),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: const Icon(
-                Icons.sd_storage_outlined,
+              child: Icon(
+                v['removable'] == true
+                    ? Icons.sd_storage_outlined
+                    : Icons.phone_android_outlined,
                 color: primaryBlue,
                 size: 25,
               ),
@@ -577,7 +555,7 @@ class _ExplorerHomeState extends State<ExplorerHome>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    v['removable'] == true ? v['name'] : 'sdcard',
+                    v['removable'] == true ? v['name'] : 'Device',
                     style: const TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
@@ -586,13 +564,11 @@ class _ExplorerHomeState extends State<ExplorerHome>
                   const SizedBox(height: 8),
                   ClipRRect(
                     borderRadius: BorderRadius.circular(4),
-                    child: LinearProgressIndicator(
+                    child: ExplorerProgressBar(
                       value: total > 0
                           ? (used / total).clamp(0, 1).toDouble()
                           : 0,
-                      minHeight: 5,
-                      color: primaryBlue,
-                      backgroundColor: primaryBlue.withValues(alpha: .09),
+                      height: 5,
                     ),
                   ),
                   const SizedBox(height: 6),

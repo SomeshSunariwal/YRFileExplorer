@@ -1,5 +1,9 @@
+import 'package:yr_file_explorer/core/theme/explorer_style.dart';
+import 'package:yr_file_explorer/shared/widgets/explorer_search_header.dart';
+import 'package:yr_file_explorer/shared/dialogs/explorer_dialog.dart';
 import 'package:flutter/material.dart';
 
+import 'package:yr_file_explorer/shared/widgets/progress_overlay.dart';
 import 'package:yr_file_explorer/core/platform/native_bridge.dart';
 import 'package:yr_file_explorer/core/utils/file_format.dart';
 import 'package:yr_file_explorer/shared/dialogs/input_dialogs.dart';
@@ -218,7 +222,7 @@ class _TextEditorState extends State<TextEditor> {
       case 'Encoding':
         final value = await showDialog<String>(
           context: context,
-          builder: (dialog) => SimpleDialog(
+          builder: (dialog) => ExplorerChoiceDialog(
             title: const Text('Encoding'),
             children: [
               for (final name in [
@@ -230,12 +234,10 @@ class _TextEditorState extends State<TextEditor> {
                 'Shift_JIS',
                 'ISO-8859-1',
               ])
-                SimpleDialogOption(
-                  onPressed: () => Navigator.pop(dialog, name),
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Text(name),
-                  ),
+                ExplorerChoiceTile(
+                  icon: Icons.translate,
+                  label: name,
+                  onTap: () => Navigator.pop(dialog, name),
                 ),
             ],
           ),
@@ -250,7 +252,7 @@ class _TextEditorState extends State<TextEditor> {
       case 'Line terminator':
         final value = await showDialog<String>(
           context: context,
-          builder: (dialog) => SimpleDialog(
+          builder: (dialog) => ExplorerChoiceDialog(
             title: const Text('Line Terminator'),
             children: [
               for (final item in [
@@ -258,12 +260,10 @@ class _TextEditorState extends State<TextEditor> {
                 ('LF', 'UNIX Terminators - LF'),
                 ('CR', 'MAC Terminators - CR'),
               ])
-                SimpleDialogOption(
-                  onPressed: () => Navigator.pop(dialog, item.$1),
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Text(item.$2),
-                  ),
+                ExplorerChoiceTile(
+                  icon: Icons.keyboard_return,
+                  label: item.$2,
+                  onTap: () => Navigator.pop(dialog, item.$1),
                 ),
             ],
           ),
@@ -272,13 +272,14 @@ class _TextEditorState extends State<TextEditor> {
       case 'Font size':
         final value = await showDialog<double>(
           context: context,
-          builder: (dialog) => SimpleDialog(
+          builder: (dialog) => ExplorerChoiceDialog(
             title: const Text('Font size'),
             children: [
               for (final size in [12.0, 14.0, 16.0, 18.0, 20.0, 24.0])
-                SimpleDialogOption(
-                  onPressed: () => Navigator.pop(dialog, size),
-                  child: Text('${size.toInt()}'),
+                ExplorerChoiceTile(
+                  icon: Icons.format_size,
+                  label: '${size.toInt()}',
+                  onTap: () => Navigator.pop(dialog, size),
                 ),
             ],
           ),
@@ -399,124 +400,122 @@ class _TextEditorState extends State<TextEditor> {
           ),
         ],
       ),
-      body: SafeArea(
-        top: false,
-        bottom: false,
-        child: Column(
-          children: [
-            if (searching)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
-                child: Column(
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: find,
-                            onChanged: (_) {
-                              match = -1;
-                              findNext();
-                            },
-                            decoration: const InputDecoration(hintText: 'Find'),
-                          ),
+      body: ExplorerProgressOverlay(
+        active: saving,
+        child: SafeArea(
+          top: false,
+          bottom: false,
+          child: Column(
+            children: [
+              if (searching)
+                Padding(
+                  padding: EdgeInsets.zero,
+                  child: Column(
+                    children: [
+                      ExplorerHeaderFrame(
+                        separators: false,
+                        child: ExplorerSearchHeader(
+                          controller: find,
+                          hint: 'Find text',
+                          onChanged: (_) {
+                            match = -1;
+                            findNext();
+                          },
+                          onSubmitted: (_) => findNext(),
+                          onClose: () => setState(() => searching = false),
                         ),
-                        Text(
-                          '${matches.isEmpty ? 0 : match % matches.length + 1}/${matches.length}',
-                          style: const TextStyle(fontSize: 11),
-                        ),
-                        IconButton(
-                          tooltip: 'Previous match',
-                          onPressed: () => findNext(previous: true),
-                          icon: const Icon(Icons.keyboard_arrow_up),
-                        ),
-                        IconButton(
-                          tooltip: 'Next match',
-                          onPressed: findNext,
-                          icon: const Icon(Icons.keyboard_arrow_down),
-                        ),
-                        IconButton(
-                          tooltip: 'Close find',
-                          onPressed: () => setState(() => searching = false),
-                          icon: const Icon(Icons.close),
-                        ),
-                      ],
-                    ),
-                    Row(
-                      children: [
-                        FilterChip(
-                          label: const Text('Match case'),
-                          selected: matchCase,
-                          onSelected: (v) => setState(() => matchCase = v),
-                        ),
-                        if (!widget.readOnly)
-                          TextButton(
-                            onPressed: () =>
-                                setState(() => replacing = !replacing),
-                            child: const Text('Replace'),
-                          ),
-                      ],
-                    ),
-                    if (replacing)
-                      Row(
+                      ),
+                      Wrap(
+                        spacing: 8,
+                        crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
-                          Expanded(
-                            child: TextField(
-                              controller: replacement,
-                              decoration: const InputDecoration(
-                                hintText: 'Replace with',
-                              ),
+                          Text(
+                            '${matches.isEmpty ? 0 : match % matches.length + 1}/${matches.length}',
+                            style: const TextStyle(fontSize: 11),
+                          ),
+                          IconButton(
+                            tooltip: 'Previous match',
+                            onPressed: () => findNext(previous: true),
+                            icon: const Icon(Icons.keyboard_arrow_up),
+                          ),
+                          FilterChip(
+                            label: const Text('Match case'),
+                            selected: matchCase,
+                            onSelected: (v) => setState(() => matchCase = v),
+                          ),
+                          if (!widget.readOnly)
+                            TextButton(
+                              onPressed: () =>
+                                  setState(() => replacing = !replacing),
+                              child: const Text('Replace'),
                             ),
-                          ),
-                          TextButton(
-                            onPressed: () => replace(),
-                            child: const Text('Replace'),
-                          ),
-                          TextButton(
-                            onPressed: () => replace(all: true),
-                            child: const Text('All'),
-                          ),
                         ],
                       ),
-                  ],
+                      if (replacing)
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: replacement,
+                                decoration: const InputDecoration(
+                                  hintText: 'Replace with',
+                                ),
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: () => replace(),
+                              child: const Text('Replace'),
+                            ),
+                            TextButton(
+                              onPressed: () => replace(all: true),
+                              child: const Text('All'),
+                            ),
+                          ],
+                        ),
+                    ],
+                  ),
                 ),
+
+              Expanded(
+                child: loading
+                    ? const Center(child: CircularProgressIndicator())
+                    : error != null
+                    ? EmptyState(
+                        title: 'Cannot read text',
+                        message: error!,
+                        action: TextButton(
+                          onPressed: () => menu('Encoding'),
+                          child: const Text('Choose encoding'),
+                        ),
+                      )
+                    : TextField(
+                        controller: controller,
+                        focusNode: focus,
+                        undoController: undo,
+                        scrollController: scroll,
+                        readOnly: !editing,
+                        expands: true,
+                        maxLines: null,
+                        minLines: null,
+                        keyboardType: TextInputType.multiline,
+                        textAlignVertical: TextAlignVertical.top,
+                        style: TextStyle(
+                          fontFamily: editing ? 'monospace' : null,
+                          fontSize: fontSize,
+                          height: 1.5,
+                        ),
+                        decoration: const InputDecoration(
+                          contentPadding: EdgeInsets.all(14),
+                          filled: false,
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          disabledBorder: InputBorder.none,
+                        ),
+                      ),
               ),
-            if (saving) const LinearProgressIndicator(minHeight: 2),
-            Expanded(
-              child: loading
-                  ? const Center(child: CircularProgressIndicator())
-                  : error != null
-                  ? EmptyState(
-                      title: 'Cannot read text',
-                      message: error!,
-                      action: TextButton(
-                        onPressed: () => menu('Encoding'),
-                        child: const Text('Choose encoding'),
-                      ),
-                    )
-                  : TextField(
-                      controller: controller,
-                      focusNode: focus,
-                      undoController: undo,
-                      scrollController: scroll,
-                      readOnly: !editing,
-                      expands: true,
-                      maxLines: null,
-                      minLines: null,
-                      keyboardType: TextInputType.multiline,
-                      textAlignVertical: TextAlignVertical.top,
-                      style: TextStyle(
-                        fontFamily: editing ? 'monospace' : null,
-                        fontSize: fontSize,
-                        height: 1.5,
-                      ),
-                      decoration: const InputDecoration(
-                        contentPadding: EdgeInsets.all(14),
-                        border: InputBorder.none,
-                      ),
-                    ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
       bottomNavigationBar: SafeArea(

@@ -28,8 +28,9 @@ class WindowPreviewCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final outline = selected ? primaryBlue : Theme.of(context).dividerColor;
-    final surface = colors.surfaceContainerLow;
     final dark = Theme.of(context).brightness == Brightness.dark;
+    final surface = dark ? const Color(0xff393939) : const Color(0xffe5eaf0);
+    final buttonSurface = colors.surface.withValues(alpha: .96);
     final bandColor = Color.lerp(surface, primaryBlue, selected ? .20 : .12)!;
     return Material(
       color: surface,
@@ -45,9 +46,11 @@ class WindowPreviewCard extends StatelessWidget {
           children: [
             if (preview != null)
               Padding(
-                padding: const EdgeInsets.all(8),
+                padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(12),
+                  ),
                   child: Image.memory(
                     preview!,
                     fit: BoxFit.cover,
@@ -103,44 +106,33 @@ class WindowPreviewCard extends StatelessWidget {
             Positioned(
               top: 2,
               left: 2,
-              child: IconButton(
+              child: _PreviewControl(
                 tooltip: isDefault
                     ? 'Default startup tab'
                     : 'Set as default startup tab',
                 onPressed: onDefault,
-                style: IconButton.styleFrom(
-                  fixedSize: const Size.square(44),
-                  padding: EdgeInsets.zero,
-                  foregroundColor: isDefault
-                      ? primaryBlue
-                      : colors.onSurfaceVariant,
-                  backgroundColor: Colors.transparent,
-                ),
-                icon: Icon(
-                  isDefault ? Icons.home_rounded : Icons.home_outlined,
-                  size: 20,
-                ),
+                icon: isDefault ? Icons.home_rounded : Icons.home_outlined,
+                foreground: isDefault ? primaryBlue : colors.onSurfaceVariant,
+                background: isDefault
+                    ? Color.alphaBlend(
+                        primaryBlue.withValues(alpha: .10),
+                        buttonSurface,
+                      )
+                    : buttonSurface,
               ),
             ),
             if (onClose != null)
               Positioned(
                 top: 2,
                 right: 2,
-                child: IconButton(
+                child: _PreviewControl(
                   tooltip: locked ? 'Window locked' : 'Close window',
                   onPressed: locked ? null : onClose,
-                  style: IconButton.styleFrom(
-                    fixedSize: const Size.square(44),
-                    padding: EdgeInsets.zero,
-                    foregroundColor: dark
-                        ? const Color(0xffef5350)
-                        : const Color(0xffd32f2f),
-                    backgroundColor: Colors.transparent,
-                  ),
-                  icon: Icon(
-                    locked ? Icons.lock_outline : Icons.close_rounded,
-                    size: 20,
-                  ),
+                  icon: locked ? Icons.lock_outline : Icons.close_rounded,
+                  foreground: dark
+                      ? const Color(0xffef5350)
+                      : const Color(0xffd32f2f),
+                  background: buttonSurface,
                 ),
               ),
           ],
@@ -148,4 +140,49 @@ class WindowPreviewCard extends StatelessWidget {
       ),
     );
   }
+}
+
+class _PreviewControl extends StatelessWidget {
+  final String tooltip;
+  final IconData icon;
+  final Color foreground, background;
+  final VoidCallback? onPressed;
+  const _PreviewControl({
+    required this.tooltip,
+    required this.icon,
+    required this.foreground,
+    required this.background,
+    required this.onPressed,
+  });
+  @override
+  Widget build(BuildContext context) => SizedBox.square(
+    dimension: 44,
+    child: Stack(
+      alignment: Alignment.center,
+      children: [
+        IgnorePointer(
+          child: Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              color: background,
+              shape: BoxShape.circle,
+            ),
+          ),
+        ),
+        IconButton(
+          tooltip: tooltip,
+          onPressed: onPressed,
+          style: IconButton.styleFrom(
+            fixedSize: const Size.square(44),
+            padding: EdgeInsets.zero,
+            foregroundColor: foreground,
+            backgroundColor: Colors.transparent,
+            shape: const CircleBorder(),
+          ),
+          icon: Icon(icon, size: 14),
+        ),
+      ],
+    ),
+  );
 }

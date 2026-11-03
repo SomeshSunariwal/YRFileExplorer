@@ -1,3 +1,5 @@
+import 'package:yr_file_explorer/core/utils/file_sort.dart';
+import 'package:yr_file_explorer/shared/dialogs/explorer_dialog.dart';
 import 'package:flutter/material.dart';
 
 import 'package:yr_file_explorer/core/models/json.dart';
@@ -41,7 +43,7 @@ class _LocalFilesState extends State<_LocalFiles> {
     listing = Native.rows('list', {'path': path, 'hidden': false});
   });
   @override
-  Widget build(BuildContext context) => AlertDialog(
+  Widget build(BuildContext context) => ExplorerDialog(
     title: Text('Upload (${selected.length})'),
     contentPadding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
     content: SizedBox(
@@ -87,14 +89,11 @@ class _LocalFilesState extends State<_LocalFiles> {
                 if (!snapshot.hasData) {
                   return const Center(child: CircularProgressIndicator());
                 }
-                final rows = List<Json>.of(snapshot.data!)
-                  ..sort(
-                    (a, b) => a['directory'] != b['directory']
-                        ? (a['directory'] == true ? -1 : 1)
-                        : a['name'].toString().toLowerCase().compareTo(
-                            b['name'].toString().toLowerCase(),
-                          ),
-                  );
+                final rows = sortedFileEntries(
+                  snapshot.data!,
+                  sort: 'Name',
+                  descending: false,
+                );
                 return ListView.builder(
                   itemCount: rows.length,
                   itemBuilder: (_, i) {

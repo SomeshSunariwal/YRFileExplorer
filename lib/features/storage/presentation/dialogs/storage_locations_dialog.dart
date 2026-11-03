@@ -1,8 +1,8 @@
+import 'package:yr_file_explorer/shared/dialogs/explorer_dialog.dart';
 import 'package:flutter/material.dart';
 
 import 'package:yr_file_explorer/core/models/json.dart';
 import 'package:yr_file_explorer/core/platform/native_bridge.dart';
-import 'package:yr_file_explorer/core/theme/explorer_style.dart';
 import 'package:yr_file_explorer/core/theme/file_categories.dart';
 import 'package:yr_file_explorer/core/utils/file_format.dart';
 import 'package:yr_file_explorer/features/workspace/application/workspace_session.dart';
@@ -26,15 +26,8 @@ Future<void> showStorageLocations(
     context: context,
     builder: (dialog) {
       final dark = Theme.of(dialog).brightness == Brightness.dark;
-      final background = dark ? explorerDarkSurface : Colors.white;
       final line = dark ? Colors.white12 : const Color(0xffe8edf1);
-      return Dialog(
-        backgroundColor: background,
-        surfaceTintColor: Colors.transparent,
-        elevation: 12,
-        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 48),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        clipBehavior: Clip.antiAlias,
+      return ExplorerDialogSurface(
         child: ConstrainedBox(
           constraints: BoxConstraints(
             maxWidth: 400,
@@ -108,32 +101,7 @@ Future<void> showStorageLocations(
               return Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  SizedBox(
-                    height: 48,
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        const Center(
-                          child: Text(
-                            'History',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                        Positioned(
-                          right: 4,
-                          child: IconButton(
-                            tooltip: 'Close',
-                            icon: const Icon(Icons.close, size: 19),
-                            onPressed: () => Navigator.pop(dialog),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Divider(height: 1, color: line),
+                  const ExplorerDialogHeader(title: Text('History')),
                   Flexible(
                     child: FutureBuilder<List<Json>>(
                       future: listing,
@@ -181,8 +149,10 @@ Future<void> showStorageLocations(
                               location(
                                 label: volume['removable'] == true
                                     ? volume['name']
-                                    : 'sdcard',
-                                icon: Icons.sd_card_outlined,
+                                    : 'Device',
+                                icon: volume['removable'] == true
+                                    ? Icons.sd_card_outlined
+                                    : Icons.phone_android_outlined,
                                 detail:
                                     '${sizeLabel(((volume['total'] as num? ?? 0) - (volume['free'] as num? ?? 0)).clamp(0, double.infinity))} used / ${sizeLabel(volume['total'] ?? 0)}',
                                 onTap: () => open(dialog, volume['path']),

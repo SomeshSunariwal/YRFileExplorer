@@ -1,23 +1,19 @@
+import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
+import 'widgets/workspace_window.dart';
+
+import 'package:yr_file_explorer/core/theme/explorer_style.dart';
 import 'package:yr_file_explorer/core/models/json.dart';
+import 'package:yr_file_explorer/core/platform/native_bridge.dart';
 import 'package:yr_file_explorer/core/settings/app_settings.dart';
 import 'package:yr_file_explorer/core/utils/file_format.dart';
-import 'package:yr_file_explorer/features/analysis/presentation/sd_card_analyst_page.dart';
-import 'package:yr_file_explorer/features/analysis/presentation/storage_analysis_page.dart';
-import 'package:yr_file_explorer/features/apps/presentation/apps_page.dart';
-import 'package:yr_file_explorer/features/archives/presentation/archive_page.dart';
 import 'package:yr_file_explorer/features/files/application/file_clipboard.dart';
-import 'package:yr_file_explorer/features/files/presentation/file_browser_page.dart';
 import 'package:yr_file_explorer/features/home/presentation/home_page.dart';
-import 'package:yr_file_explorer/features/network/presentation/bluetooth_page.dart';
-import 'package:yr_file_explorer/features/network/presentation/net_manager_page.dart';
 import 'package:yr_file_explorer/features/network/presentation/network_page.dart';
-import 'package:yr_file_explorer/features/network/presentation/remote_browser_page.dart';
-import 'package:yr_file_explorer/features/recycle_bin/presentation/recycle_bin_page.dart';
 import 'package:yr_file_explorer/features/settings/presentation/settings_page.dart';
 import 'package:yr_file_explorer/features/workspace/application/workspace_session.dart';
 import 'package:yr_file_explorer/features/workspace/presentation/widgets/workspace_page_deck.dart';
@@ -33,16 +29,18 @@ class _ExplorerWorkspaceState extends State<ExplorerWorkspace> {
   final session = ExplorerWorkspaceSession.instance;
   final clipboard = FileClipboard();
   bool restoredDefaults = false;
-  int previewEpoch = 0;
+  Timer? previewTimer;
+  Future<void>? pendingCapture;
+  int? capturingId;
   int? previewActiveId;
   bool previewRequested = false;
   Brightness? previewBrightness;
 
   void queuePreview() {
-    final epoch = ++previewEpoch;
+    previewTimer?.cancel();
     final id = session.activeId;
-    Future<void>.delayed(const Duration(milliseconds: 500), () async {
-      if (mounted && epoch == previewEpoch && id == session.activeId) {
+    previewTimer = Timer(const Duration(milliseconds: 500), () async {
+      if (mounted && id == session.activeId) {
         await captureCurrent();
       }
     });
@@ -78,18 +76,53 @@ class _ExplorerWorkspaceState extends State<ExplorerWorkspace> {
     session.onPermissionGranted = restoreDefaults;
   }
 
-  void restoreDefaults() {
+  Future<void> restoreDefaults() async {
     if (restoredDefaults) return;
     restoredDefaults = true;
     for (final entry in session.defaults) {
-      if (entry['page'] == 'analysis' && entry['path'] is String) {
-        session.open(entry['path'], page: 'analysis', title: 'SD Card Analyst');
+      if (entry['profile'] is Map) {
+        final profile = Map<String, dynamic>.from(entry['profile'] as Map);
+        profile['path'] = entry['path'] ?? profile['path'] ?? '/';
+        if (profile['rememberPassword'] == true) {
+          try {
+            profile['password'] =
+                await Native.call<String>('connectionPassword', {
+                  'id':
+                      '${profile['protocol']}|${profile['host']}|${profile['port']}|${profile['username']}',
+                }) ??
+                '';
+          } catch (_) {
+            profile.remove('password');
+          }
+        }
+        if (!mounted) return;
+        session.openRemote(profile);
+        continue;
+      }
+      if (entry['page'] == 'analysis_results' && entry['path'] is String) {
+        session.open(
+          entry['path'],
+          page: 'analysis_results',
+          category: entry['category'],
+          title: entry['title'],
+        );
+        continue;
+      }
+      if (['analysis', 'storage_analysis'].contains(entry['page']) &&
+          entry['path'] is String) {
+        session.open(
+          entry['path'],
+          page: entry['page'],
+          title: entry['page'] == 'analysis'
+              ? 'Storage Analyzer'
+              : 'Folder Analysis',
+        );
         continue;
       }
       if (entry['page'] != null &&
           entry['page'] != 'files' &&
           entry['page'] != 'archive') {
-        session.openPage(entry['page']);
+        session.openPage(entry['page'], url: entry['url']);
         continue;
       }
       if (entry['path'] is String) {
@@ -115,7 +148,21 @@ class _ExplorerWorkspaceState extends State<ExplorerWorkspace> {
   }
 
   Future<void> captureCurrent() async {
-    if (!mounted) return;
+    final requestedId = session.activeId;
+    final pending = pendingCapture;
+    if (pending != null) {
+      final sameWindow = capturingId == requestedId;
+      await pending;
+      if (sameWindow || !mounted || requestedId != session.activeId) return;
+    }
+    capturingId = requestedId;
+    await (pendingCapture ??= capturePreview().whenComplete(
+      () => pendingCapture = null,
+    ));
+  }
+
+  Future<void> capturePreview() async {
+    if (!mounted || session.swipeMotion.value != null) return;
     final id = session.activeId;
     final key = id == null
         ? session.homePreviewKey
@@ -128,24 +175,30 @@ class _ExplorerWorkspaceState extends State<ExplorerWorkspace> {
         return;
       }
     }
+    ui.Image? image;
     try {
-      final image = await boundary.toImage(pixelRatio: .6);
-      if (!mounted || id != session.activeId) {
-        image.dispose();
+      image = await boundary.toImage(pixelRatio: .6);
+      if (!mounted ||
+          id != session.activeId ||
+          session.swipeMotion.value != null) {
         return;
       }
       final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
-      image.dispose();
-      if (bytes != null && mounted && id == session.activeId) {
+      if (bytes != null &&
+          mounted &&
+          id == session.activeId &&
+          session.swipeMotion.value == null) {
         session.setPreview(id, bytes.buffer.asUint8List());
       }
     } catch (_) {
       /* A loading tab may not have a painted frame yet. */
+    } finally {
+      image?.dispose();
     }
   }
 
   void openServer(Json profile) => Navigator.of(context).push(
-    MaterialPageRoute<void>(
+    ExplorerPageRoute<void>(
       builder: (_) => NetworkPage(
         settings: widget.settings,
         clipboard: clipboard,
@@ -163,52 +216,36 @@ class _ExplorerWorkspaceState extends State<ExplorerWorkspace> {
           : current.page == 'archive'
           ? parentPath(current.path)
           : current.path;
-      session.open(path, page: 'analysis', title: 'SD Card Analyst');
+      session.open(path, page: 'analysis', title: 'Storage Analyzer');
       return;
     }
     if ([
       'apps',
       'network',
       'trash',
-      'analysis',
       'lan',
       'ftp',
       'webdav',
       'bluetooth',
       'netmanager',
+      'downloads',
     ].contains(page)) {
       session.openPage(page);
       return;
     }
-    final path =
-        session.windows
-            .where((w) => w.id == session.activeId)
-            .firstOrNull
-            ?.path ??
-        session.root;
-    final Widget screen = switch (page) {
-      'apps' => AppsPage(settings: widget.settings),
-      'trash' => TrashPage(settings: widget.settings),
-      'network' || 'ftp' || 'sftp' => NetworkPage(
-        settings: widget.settings,
-        clipboard: clipboard,
-        initialProtocol: page == 'ftp'
-            ? 'FTP'
-            : page == 'sftp'
-            ? 'SFTP'
-            : null,
-      ),
-      'analysis' => AnalysisPage(
-        path: path,
-        onBrowse: (path) => session.open(path),
-      ),
-      _ => SettingsPage(settings: widget.settings),
-    };
-    Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
+    final Widget screen = page == 'sftp'
+        ? NetworkPage(
+            settings: widget.settings,
+            clipboard: clipboard,
+            initialProtocol: 'SFTP',
+          )
+        : SettingsPage(settings: widget.settings);
+    Navigator.of(context).push(ExplorerPageRoute<void>(builder: (_) => screen));
   }
 
   @override
   void dispose() {
+    previewTimer?.cancel();
     session.removeListener(changed);
     session.onTool = null;
     session.onServer = null;
@@ -225,9 +262,12 @@ class _ExplorerWorkspaceState extends State<ExplorerWorkspace> {
     activeId: session.activeId ?? 0,
     pageIds: [0, for (final window in session.windows) window.id],
     children: [
-      RepaintBoundary(
-        key: session.homePreviewKey,
-        child: ExplorerHome(settings: widget.settings, clipboard: clipboard),
+      TickerMode(
+        enabled: session.activeId == null,
+        child: RepaintBoundary(
+          key: session.homePreviewKey,
+          child: ExplorerHome(settings: widget.settings, clipboard: clipboard),
+        ),
       ),
       for (final window in session.windows)
         TickerMode(
@@ -235,65 +275,11 @@ class _ExplorerWorkspaceState extends State<ExplorerWorkspace> {
           enabled: session.activeId == window.id,
           child: RepaintBoundary(
             key: window.previewKey,
-            child: window.page == 'bluetooth'
-                ? BluetoothPage(
-                    windowId: window.id,
-                    settings: widget.settings,
-                    clipboard: clipboard,
-                  )
-                : window.page == 'netmanager'
-                ? NetManagerPage(windowId: window.id, settings: widget.settings)
-                : ['lan', 'ftp', 'webdav'].contains(window.page)
-                ? NetworkPage(
-                    windowId: window.id,
-                    settings: widget.settings,
-                    clipboard: clipboard,
-                    section: window.page == 'lan'
-                        ? 'LAN'
-                        : window.page == 'ftp'
-                        ? 'FTP'
-                        : 'WebDAV',
-                  )
-                : window.page == 'analysis'
-                ? SdCardAnalyst(
-                    windowId: window.id,
-                    path: window.path,
-                    settings: widget.settings,
-                  )
-                : window.page == 'archive'
-                ? ArchivePage(
-                    windowId: window.id,
-                    path: window.path,
-                    settings: widget.settings,
-                    clipboard: clipboard,
-                  )
-                : window.page == 'apps'
-                ? AppsPage(windowId: window.id, settings: widget.settings)
-                : window.page == 'network'
-                ? NetworkPage(
-                    windowId: window.id,
-                    settings: widget.settings,
-                    clipboard: clipboard,
-                  )
-                : window.page == 'trash'
-                ? TrashPage(windowId: window.id, settings: widget.settings)
-                : window.profile == null
-                ? FileBrowser(
-                    windowId: window.id,
-                    path: window.path,
-                    settings: widget.settings,
-                    clipboard: clipboard,
-                    category: window.category,
-                    title: window.title,
-                    recent: window.recent,
-                    initialSearch: window.search,
-                  )
-                : RemoteBrowser(
-                    windowId: window.id,
-                    profile: window.profile!,
-                    settings: widget.settings,
-                    clipboard: clipboard,
-                  ),
+            child: WorkspaceWindow(
+              window: window,
+              settings: widget.settings,
+              clipboard: clipboard,
+            ),
           ),
         ),
     ],
