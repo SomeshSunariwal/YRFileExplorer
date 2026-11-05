@@ -157,7 +157,17 @@ class _NetworkPageState extends State<NetworkPage> {
       }
       if (!mounted) return;
       ExplorerWorkspaceSession.instance.servers = widget.settings.connections;
-      ExplorerWorkspaceSession.instance.openRemote(p);
+      final workspace = ExplorerWorkspaceSession.instance;
+      final split = workspace.windows.any(
+        (window) => window.id == widget.windowId && window.split,
+      );
+      workspace.openRemote(p);
+      if (split && workspace.activeId != null) {
+        if (widget.windowId != null) {
+          workspace.setSplit(widget.windowId!, false);
+        }
+        workspace.setSplit(workspace.activeId!, true);
+      }
       if (widget.windowId == null) Navigator.pop(context);
     } catch (e) {
       if (mounted) showError(context, e);

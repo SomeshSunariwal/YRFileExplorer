@@ -1,3 +1,4 @@
+import 'package:yr_file_explorer/shared/widgets/selection_drag_area.dart';
 import 'package:yr_file_explorer/shared/widgets/grouped_file_view.dart';
 import 'package:yr_file_explorer/shared/dialogs/explorer_dialog.dart';
 import 'package:yr_file_explorer/features/workspace/presentation/widgets/explorer_bottom_bar.dart';
@@ -448,132 +449,148 @@ class _ArchivePageState extends State<ArchivePage> {
                 () => showExplorerWindows(context),
               ),
             ],
-      body: Column(
-        children: [
-          Expanded(
-            child: loading
-                ? const Center(child: CircularProgressIndicator())
-                : error != null
-                ? EmptyState(
-                    title: 'Cannot open archive',
-                    message: error!,
-                    action: FilledButton(
-                      onPressed: load,
-                      child: const Text('Retry'),
-                    ),
-                  )
-                : rows.isEmpty
-                ? const EmptyState(
-                    title: 'Empty archive folder',
-                    message: 'There are no entries in this folder.',
-                  )
-                : grid
-                ? LayoutBuilder(
-                    builder: (context, constraints) => GroupedFileView(
+      body: SelectionDragArea(
+        selected: selected,
+        enabled: !busy,
+        onSelection: (id, value) => setState(() {
+          value ? selected.add(id) : selected.remove(id);
+        }),
+        child: Column(
+          children: [
+            Expanded(
+              child: loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : error != null
+                  ? EmptyState(
+                      title: 'Cannot open archive',
+                      message: error!,
+                      action: FilledButton(
+                        onPressed: load,
+                        child: const Text('Retry'),
+                      ),
+                    )
+                  : rows.isEmpty
+                  ? const EmptyState(
+                      title: 'Empty archive folder',
+                      message: 'There are no entries in this folder.',
+                    )
+                  : grid
+                  ? LayoutBuilder(
+                      builder: (context, constraints) => GroupedFileView(
+                        entries: rows,
+                        groupBy: widget.settings.groupBy,
+                        descending: widget.settings.groupDescending,
+                        child: GridView.builder(
+                          padding: EdgeInsets.fromLTRB(
+                            10,
+                            10,
+                            10,
+                            ExplorerBottomBar.contentBottomPadding(context),
+                          ),
+                          gridDelegate:
+                              SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: explorerGridColumns(
+                                  viewMode,
+                                  width: constraints.maxWidth,
+                                ),
+                                mainAxisExtent:
+                                    explorerGlyphSize(viewMode) +
+                                    24 +
+                                    explorerGridLabelHeight(context),
+                                crossAxisSpacing: 6,
+                                mainAxisSpacing: 8,
+                              ),
+                          itemCount: rows.length,
+                          itemBuilder: (_, i) {
+                            final e = rows[i];
+                            return SelectionDragItem(
+                              id: e['path'] as String,
+                              child: InkWell(
+                                onTap: () => open(e),
+                                borderRadius: BorderRadius.circular(10),
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: selected.contains(e['path'])
+                                        ? primaryBlue.withValues(alpha: .12)
+                                        : null,
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  padding: const EdgeInsets.all(6),
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      selected.contains(e['path'])
+                                          ? const Icon(
+                                              Icons.check_circle,
+                                              size: 42,
+                                              color: primaryBlue,
+                                            )
+                                          : FileGlyph(
+                                              e,
+                                              size: explorerGlyphSize(viewMode),
+                                            ),
+                                      const SizedBox(height: 8),
+                                      SizedBox(
+                                        height: explorerGridLabelHeight(
+                                          context,
+                                        ),
+                                        child: Text(
+                                          e['name'],
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          textAlign: TextAlign.center,
+                                          style: const TextStyle(
+                                            fontSize: 11,
+                                            height: 1.25,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    )
+                  : GroupedFileView(
                       entries: rows,
                       groupBy: widget.settings.groupBy,
                       descending: widget.settings.groupDescending,
-                      child: GridView.builder(
-                        padding: EdgeInsets.fromLTRB(
-                          10,
-                          10,
-                          10,
-                          ExplorerBottomBar.contentBottomPadding(context),
-                        ),
-                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: explorerGridColumns(
-                            viewMode,
-                            width: constraints.maxWidth,
+                      child: ListView.builder(
+                        padding: EdgeInsets.only(
+                          bottom: ExplorerBottomBar.contentBottomPadding(
+                            context,
                           ),
-                          mainAxisExtent:
-                              explorerGlyphSize(viewMode) +
-                              24 +
-                              explorerGridLabelHeight(context),
-                          crossAxisSpacing: 6,
-                          mainAxisSpacing: 8,
                         ),
                         itemCount: rows.length,
                         itemBuilder: (_, i) {
                           final e = rows[i];
-                          return InkWell(
-                            onTap: () => open(e),
-                            onLongPress: () => toggle(e),
-                            borderRadius: BorderRadius.circular(10),
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: selected.contains(e['path'])
-                                    ? primaryBlue.withValues(alpha: .12)
-                                    : null,
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              padding: const EdgeInsets.all(6),
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  selected.contains(e['path'])
-                                      ? const Icon(
-                                          Icons.check_circle,
-                                          size: 42,
-                                          color: primaryBlue,
-                                        )
-                                      : FileGlyph(
-                                          e,
-                                          size: explorerGlyphSize(viewMode),
-                                        ),
-                                  const SizedBox(height: 8),
-                                  SizedBox(
-                                    height: explorerGridLabelHeight(context),
-                                    child: Text(
-                                      e['name'],
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      textAlign: TextAlign.center,
-                                      style: const TextStyle(
-                                        fontSize: 11,
-                                        height: 1.25,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
+                          return SelectionDragItem(
+                            id: e['path'] as String,
+                            child: ListTile(
+                              selected: selected.contains(e['path']),
+                              dense: viewMode.startsWith('Small'),
+                              leading: selected.contains(e['path'])
+                                  ? const Icon(
+                                      Icons.check_circle,
+                                      color: primaryBlue,
+                                    )
+                                  : FileGlyph(e),
+                              title: Text(e['name']),
+                              subtitle: viewMode.endsWith('Detail')
+                                  ? Text(sizeLabel(e['size']))
+                                  : null,
+                              onTap: () => open(e),
                             ),
                           );
                         },
                       ),
                     ),
-                  )
-                : GroupedFileView(
-                    entries: rows,
-                    groupBy: widget.settings.groupBy,
-                    descending: widget.settings.groupDescending,
-                    child: ListView.builder(
-                      padding: EdgeInsets.only(
-                        bottom: ExplorerBottomBar.contentBottomPadding(context),
-                      ),
-                      itemCount: rows.length,
-                      itemBuilder: (_, i) {
-                        final e = rows[i];
-                        return ListTile(
-                          selected: selected.contains(e['path']),
-                          dense: viewMode.startsWith('Small'),
-                          leading: selected.contains(e['path'])
-                              ? const Icon(
-                                  Icons.check_circle,
-                                  color: primaryBlue,
-                                )
-                              : FileGlyph(e),
-                          title: Text(e['name']),
-                          subtitle: viewMode.endsWith('Detail')
-                              ? Text(sizeLabel(e['size']))
-                              : null,
-                          onTap: () => open(e),
-                          onLongPress: () => toggle(e),
-                        );
-                      },
-                    ),
-                  ),
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }

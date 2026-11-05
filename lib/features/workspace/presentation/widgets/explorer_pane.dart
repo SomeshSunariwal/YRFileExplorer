@@ -1,3 +1,5 @@
+import 'split_pane_scope.dart';
+
 import 'dart:async';
 
 import 'package:yr_file_explorer/shared/widgets/explorer_selection_header.dart';
@@ -97,80 +99,90 @@ class _ExplorerPaneState extends State<ExplorerPane> {
   }
 
   @override
-  Widget build(BuildContext context) => PopScope(
-    canPop: widget.windowId == null
-        ? !widget.selecting && !widget.interceptBack
-        : session.activeId != widget.windowId,
-    onPopInvokedWithResult: (didPop, result) {
-      if (!didPop &&
-          (widget.windowId == null || session.activeId == widget.windowId)) {
-        back();
-      }
-    },
-    child: Scaffold(
-      extendBody: widget.extendBody,
-      appBar: AppBar(
-        backgroundColor: explorerChrome(context),
-        automaticallyImplyLeading: false,
-        toolbarHeight: explorerTabHeight,
-        titleSpacing: 0,
-        title: ReferenceTabs(onLocal: () => session.open(session.root)),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(explorerHeaderHeight),
-          child: widget.searchHeader != null && !widget.selecting
-              ? ExplorerHeaderFrame(
-                  separators: false,
-                  child: widget.searchHeader!,
-                )
-              : !widget.selecting
-              ? ExplorerNavigationHeader(
-                  onBack: back,
-                  onClose: () {
-                    if (widget.windowId != null) {
-                      session.close(widget.windowId!);
-                    } else {
-                      Navigator.maybePop(context);
-                    }
-                  },
-                  location: widget.title is ExplorerBreadcrumbs
-                      ? widget.title
-                      : InkWell(
-                          onTap: widget.onTitle,
-                          child: ExplorerLocationPill(
-                            child: Center(
-                              child: DefaultTextStyle(
-                                style: TextStyle(
-                                  color: explorerForeground(context),
-                                  fontSize: 14,
+  Widget build(BuildContext context) {
+    final split = SplitPaneScope.maybeOf(context);
+    if (split != null) {
+      split.onToolbar(ExplorerBottomBar(child: Row(children: widget.actions)));
+    }
+    return PopScope(
+      canPop: widget.windowId == null
+          ? !widget.selecting && !widget.interceptBack
+          : session.activeId != widget.windowId,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop &&
+            (widget.windowId == null || session.activeId == widget.windowId)) {
+          back();
+        }
+      },
+      child: Scaffold(
+        extendBody: widget.extendBody,
+        appBar: AppBar(
+          backgroundColor: explorerChrome(context),
+          automaticallyImplyLeading: false,
+          toolbarHeight: split == null ? explorerTabHeight : 0,
+          titleSpacing: 0,
+          title: split == null
+              ? ReferenceTabs(onLocal: () => session.open(session.root))
+              : null,
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(explorerHeaderHeight),
+            child: widget.searchHeader != null && !widget.selecting
+                ? ExplorerHeaderFrame(
+                    separators: false,
+                    child: widget.searchHeader!,
+                  )
+                : !widget.selecting
+                ? ExplorerNavigationHeader(
+                    onBack: back,
+                    onClose: split != null
+                        ? null
+                        : () {
+                            if (widget.windowId != null) {
+                              session.close(widget.windowId!);
+                            } else {
+                              Navigator.maybePop(context);
+                            }
+                          },
+                    location: widget.title is ExplorerBreadcrumbs
+                        ? widget.title
+                        : InkWell(
+                            onTap: widget.onTitle,
+                            child: ExplorerLocationPill(
+                              child: Center(
+                                child: DefaultTextStyle(
+                                  style: TextStyle(
+                                    color: explorerForeground(context),
+                                    fontSize: 14,
+                                  ),
+                                  child: widget.title,
                                 ),
-                                child: widget.title,
                               ),
                             ),
                           ),
-                        ),
-                )
-              : ExplorerHeaderFrame(
-                  separators: false,
-                  child: ExplorerSelectionHeader(
-                    count: widget.title,
-                    onDone: widget.busy ? null : back,
-                    onSelectAll: widget.busy ? null : widget.onSelectAll,
-                    onClear: widget.busy ? null : widget.onClearSelection,
-                    selectAllLabel: widget.selectAllLabel,
+                  )
+                : ExplorerHeaderFrame(
+                    separators: false,
+                    child: ExplorerSelectionHeader(
+                      count: widget.title,
+                      onDone: widget.busy ? null : back,
+                      onSelectAll: widget.busy ? null : widget.onSelectAll,
+                      onClear: widget.busy ? null : widget.onClearSelection,
+                      selectAllLabel: widget.selectAllLabel,
+                    ),
                   ),
-                ),
+          ),
         ),
-      ),
-      body: WorkspaceBodySlide(
-        allowTabSwipe: !widget.selecting,
-        child: ExplorerProgressOverlay(
-          active: widget.busy,
-          child: SafeArea(top: false, bottom: false, child: widget.body),
+        body: WorkspaceBodySlide(
+          allowTabSwipe: split == null && !widget.selecting,
+          child: ExplorerProgressOverlay(
+            active: widget.busy,
+            child: SafeArea(top: false, bottom: false, child: widget.body),
+          ),
         ),
+        bottomNavigationBar: split != null
+            ? null
+            : ExplorerBottomBar(child: Row(children: widget.actions)),
       ),
-      bottomNavigationBar: ExplorerBottomBar(
-        child: Row(children: widget.actions),
-      ),
-    ),
-  );
+    );
+  }
 }

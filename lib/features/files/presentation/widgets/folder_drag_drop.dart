@@ -49,8 +49,8 @@ class FolderDragData {
       );
 }
 
-/// A hold selects. Selected items require a full second before lifting,
-/// leaving quick swipes available for painting selection and deselection.
+/// The first hold selects and paints selection. A separate hold while selection
+/// is active lifts items, leaving quick swipes available for selection changes.
 class FolderDraggable extends StatelessWidget {
   final FolderDragData data;
   final ValueChanged<bool> onDragging;
@@ -174,8 +174,8 @@ class FolderDropTarget extends StatelessWidget {
   );
 }
 
-/// Unlike LongPressDraggable, winning the hold does not create a drag avatar.
-/// The avatar is started only when the pointer moves during the pickup window.
+/// Capture selection mode at pointer-down: the first hold can never lift items,
+/// even after it changes the selection. A later hold can start a move.
 class _PickupWindowDraggable<T extends Object> extends Draggable<T> {
   final VoidCallback onHold;
   final bool Function() isSelected;
@@ -224,8 +224,7 @@ class _PickupWindowPointer extends MultiDragPointerState {
   final VoidCallback onHold;
   Timer? holdTimer;
   final bool selectedAtStart;
-  Timer? windowTimer;
-  bool held = false, expired = false, arenaAccepted = false;
+  bool held = false, arenaAccepted = false;
   GestureMultiDragStartCallback? startDrag;
 
   _PickupWindowPointer(
@@ -244,28 +243,24 @@ class _PickupWindowPointer extends MultiDragPointerState {
       });
       return;
     }
-    // Quick swipes retain scrolling/tab navigation. A stationary long press
-    // selects without forcing a drag, then movement can choose to pick it up.
-    holdTimer = Timer(kLongPressTimeout, () {
+    // The initial contact is selection-only for its entire lifetime.
+    holdTimer = Timer(const Duration(seconds: 1), () {
       held = true;
-      // Give a full second after the hold selects the folder to choose dragging.
-      windowTimer = Timer(const Duration(seconds: 1), () => expired = true);
       if (!arenaAccepted) resolve(GestureDisposition.accepted);
       HapticFeedback.selectionClick();
       onHold();
-      tryPickup();
     });
   }
 
   void tryPickup() {
-    if (!held || expired || startDrag == null || pendingDelta == null) return;
-    if (!selectedAtStart &&
-        pendingDelta!.distance <= computeHitSlop(kind, gestureSettings)) {
+    if (!selectedAtStart ||
+        !held ||
+        startDrag == null ||
+        pendingDelta == null) {
       return;
     }
     final start = startDrag!;
     startDrag = null;
-    windowTimer?.cancel();
     start(initialPosition);
   }
 
@@ -290,7 +285,6 @@ class _PickupWindowPointer extends MultiDragPointerState {
   @override
   void dispose() {
     holdTimer?.cancel();
-    windowTimer?.cancel();
     startDrag = null;
     super.dispose();
   }

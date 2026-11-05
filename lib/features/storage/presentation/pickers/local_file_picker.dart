@@ -1,3 +1,4 @@
+import 'package:yr_file_explorer/shared/widgets/selection_drag_area.dart';
 import 'package:yr_file_explorer/core/utils/file_sort.dart';
 import 'package:yr_file_explorer/shared/dialogs/explorer_dialog.dart';
 import 'package:flutter/material.dart';
@@ -80,53 +81,61 @@ class _LocalFilesState extends State<_LocalFiles> {
           ),
           const Divider(),
           Expanded(
-            child: FutureBuilder<List<Json>>(
-              future: listing,
-              builder: (_, snapshot) {
-                if (snapshot.hasError) {
-                  return Center(child: Text('${snapshot.error}'));
-                }
-                if (!snapshot.hasData) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                final rows = sortedFileEntries(
-                  snapshot.data!,
-                  sort: 'Name',
-                  descending: false,
-                );
-                return ListView.builder(
-                  itemCount: rows.length,
-                  itemBuilder: (_, i) {
-                    final e = rows[i];
-                    void toggle() => setState(() {
-                      selected.contains(e['path'])
-                          ? selected.remove(e['path'])
-                          : selected.add(e['path']);
-                    });
-                    return ListTile(
-                      leading: FileGlyph(e, size: 28),
-                      title: Text(
-                        e['name'],
-                        style: const TextStyle(fontSize: 13),
-                      ),
-                      subtitle: Text(
-                        e['directory'] == true
-                            ? 'Folder'
-                            : sizeLabel(e['size']),
-                        style: const TextStyle(fontSize: 11),
-                      ),
-                      onTap: e['directory'] == true
-                          ? () => go(e['path'])
-                          : toggle,
-                      onLongPress: toggle,
-                      trailing: Checkbox(
-                        value: selected.contains(e['path']),
-                        onChanged: (_) => toggle(),
-                      ),
-                    );
-                  },
-                );
-              },
+            child: SelectionDragArea(
+              selected: selected,
+              onSelection: (id, value) => setState(() {
+                value ? selected.add(id) : selected.remove(id);
+              }),
+              child: FutureBuilder<List<Json>>(
+                future: listing,
+                builder: (_, snapshot) {
+                  if (snapshot.hasError) {
+                    return Center(child: Text('${snapshot.error}'));
+                  }
+                  if (!snapshot.hasData) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  final rows = sortedFileEntries(
+                    snapshot.data!,
+                    sort: 'Name',
+                    descending: false,
+                  );
+                  return ListView.builder(
+                    itemCount: rows.length,
+                    itemBuilder: (_, i) {
+                      final e = rows[i];
+                      void toggle() => setState(() {
+                        selected.contains(e['path'])
+                            ? selected.remove(e['path'])
+                            : selected.add(e['path']);
+                      });
+                      return SelectionDragItem(
+                        id: e['path'] as String,
+                        child: ListTile(
+                          leading: FileGlyph(e, size: 28),
+                          title: Text(
+                            e['name'],
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                          subtitle: Text(
+                            e['directory'] == true
+                                ? 'Folder'
+                                : sizeLabel(e['size']),
+                            style: const TextStyle(fontSize: 11),
+                          ),
+                          onTap: e['directory'] == true
+                              ? () => go(e['path'])
+                              : toggle,
+                          trailing: Checkbox(
+                            value: selected.contains(e['path']),
+                            onChanged: (_) => toggle(),
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
             ),
           ),
         ],

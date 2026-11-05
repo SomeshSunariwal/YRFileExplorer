@@ -53,6 +53,8 @@ public class MainActivity extends FlutterActivity {
 
     @Override public void configureFlutterEngine(FlutterEngine engine) {
         super.configureFlutterEngine(engine);
+        com.somesh.yrfileexplorer.security.PrivateSpace.get(this).setOnLocked(() -> { if(events != null) events.success(Map.of("type", "privateLocked")); });
+
         prefs = getSharedPreferences("yr_preferences", MODE_PRIVATE);
         network = new NetworkEngine(getFilesDir());
         engine.getPlatformViewsController().getRegistry().registerViewFactory("yr/web", new WebBrowserView.Factory(engine.getDartExecutor().getBinaryMessenger()));
@@ -63,6 +65,18 @@ public class MainActivity extends FlutterActivity {
         new MethodChannel(engine.getDartExecutor().getBinaryMessenger(), "yr/files").setMethodCallHandler((call, result) -> {
             try {
                 switch (call.method) {
+                    case "privateUnlock": com.somesh.yrfileexplorer.security.PrivateSpace.get(this).unlock(this, result); return;
+
+                    case "privateLock": com.somesh.yrfileexplorer.security.PrivateSpace.get(this).lock(); result.success(null); return;
+
+                    case "privateStatus": result.success(com.somesh.yrfileexplorer.security.PrivateSpace.get(this).isUnlocked()); return;
+
+                    case "privateShield": com.somesh.yrfileexplorer.security.PrivateSpace.get(this).shield(this, Boolean.TRUE.equals(call.argument("enabled"))); result.success(null); return;
+
+                    case "privateCreate": case "privatePaste": case "privateList": case "privateImport": case "privateRename": case "privateDelete": case "privateExport": case "privatePreview":
+
+                        com.somesh.yrfileexplorer.security.PrivateSpace.get(this).execute(call.method, call.arguments(), result); return;
+
                     case "cancelLanScan": lanCancelled.set(true); result.success(null); return;
                     case "requestLocalNetwork":
                         if(Build.VERSION.SDK_INT < 37 || checkSelfPermission("android.permission.ACCESS_LOCAL_NETWORK") == PackageManager.PERMISSION_GRANTED) { result.success(true); return; }
@@ -326,7 +340,12 @@ public class MainActivity extends FlutterActivity {
         if(Files.exists(original))throw new IOException("A file already exists at the original location");
         Files.createDirectories(original.getParent()); Files.move(new File(getExternalFilesDir(null),"trash/"+id).toPath(),original); prefs.edit().remove("trash_"+id).commit();
     }
-    private void open(String path, boolean external) {
+    private void open(String path, boolean external) {
+
+        if(path.startsWith(new File(getCacheDir(),"private-space-previews").getPath()+"/")) com.somesh.yrfileexplorer.security.PrivateSpace.get(this).markPrivateMedia();
+
+
+
         if(!external && (path.toLowerCase(Locale.ROOT).endsWith(".m3u")||path.toLowerCase(Locale.ROOT).endsWith(".m3u8"))){
             ArrayList<String> list=new ArrayList<>();try{
                 Path base=Paths.get(path).toAbsolutePath().getParent();
@@ -342,10 +361,12 @@ public class MainActivity extends FlutterActivity {
         String mime=path.startsWith("content:")?getContentResolver().getType(u):new ShareProvider().getType(u);
         if(path.endsWith(".apk"))mime="application/vnd.android.package-archive";
         if(!external && ("application/pdf".equals(mime) || path.toLowerCase(Locale.ROOT).endsWith(".pdf"))) {
-            startActivity(new Intent(this,PdfReaderActivity.class).setDataAndType(u,"application/pdf").putExtra("title",new File(path).getName()).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)); return;
+            startActivity(new Intent(this,PdfReaderActivity.class).setDataAndType(u,"application/pdf").putExtra("title",new File(path).getName()).putExtra("privateSpace",path.startsWith(new File(getCacheDir(),"private-space-previews").getPath()+"/")).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)); return;
+
         }
         if(!external && mime!=null && mime.startsWith("video/")) {
-            startActivity(new Intent(this,VideoViewerActivity.class).setDataAndType(u,mime).putExtra("title",new File(path).getName()).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)); return;
+            startActivity(new Intent(this,VideoViewerActivity.class).setDataAndType(u,mime).putExtra("title",new File(path).getName()).putExtra("privateSpace",path.startsWith(new File(getCacheDir(),"private-space-previews").getPath()+"/")).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)); return;
+
         }
         if(!external && mime!=null && (mime.startsWith("video/")||mime.startsWith("audio/"))) {
             ArrayList<String> playlist=new ArrayList<>();
@@ -353,7 +374,8 @@ public class MainActivity extends FlutterActivity {
                 File parent=new File(path).getParentFile();File[] files=parent==null?null:parent.listFiles(f->f.isFile()&&com.somesh.yrfileexplorer.media.AudioFormats.isAudio(f.getName()));
                 if(files!=null){Arrays.sort(files,Comparator.comparing(File::getName,String.CASE_INSENSITIVE_ORDER));for(File f:files)playlist.add(f.getAbsolutePath());}
             }
-            startActivity(new Intent(this,MediaViewerActivity.class).setDataAndType(u,mime).putExtra("title",new File(path).getName()).putExtra("sourcePath",path).putStringArrayListExtra("playlist",playlist).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)); return;
+            startActivity(new Intent(this,MediaViewerActivity.class).setDataAndType(u,mime).putExtra("title",new File(path).getName()).putExtra("privateSpace",path.startsWith(new File(getCacheDir(),"private-space-previews").getPath()+"/")).putExtra("sourcePath",path).putStringArrayListExtra("playlist",playlist).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)); return;
+
         }
         Intent i=new Intent(Intent.ACTION_VIEW).setDataAndType(u,mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         startActivity(Intent.createChooser(i,"Open with"));

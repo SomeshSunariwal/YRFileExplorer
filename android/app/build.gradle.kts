@@ -37,6 +37,7 @@ configurations.configureEach {
     if (isCanBeResolved) attributes.attribute(androidRpc, true)
 }
 dependencies {
+    implementation("com.google.crypto.tink:tink-android:1.23.0")
     artifactTypes.getByName("jar").attributes.attribute(androidRpc, false)
     registerTransform(AndroidRpcTransform::class.java) {
         from.attribute(androidRpc, false)

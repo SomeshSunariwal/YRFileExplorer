@@ -284,7 +284,12 @@ class _ExplorerHomeState extends State<ExplorerHome>
                           title: AnalysisKind.duplicates.title,
                         ),
                       ),
-                    ]),
+                      _bookmark(
+                        'Private Space',
+                        Icons.lock_outline,
+                        () => sessionTool('private'),
+                      ),
+                    ], columns: 2),
                     const SizedBox(height: 10),
                     _shortcutSection('Network', [
                       _bookmark(

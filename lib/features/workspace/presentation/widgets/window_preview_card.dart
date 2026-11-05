@@ -33,6 +33,8 @@ class WindowPreviewCard extends StatelessWidget {
     final buttonSurface = colors.surface.withValues(alpha: .96);
     final bandColor = Color.lerp(surface, primaryBlue, selected ? .20 : .12)!;
     return Material(
+      elevation: 3,
+      shadowColor: Colors.black.withValues(alpha: dark ? .38 : .16),
       color: surface,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(18),
@@ -119,6 +121,7 @@ class WindowPreviewCard extends StatelessWidget {
                         buttonSurface,
                       )
                     : buttonSurface,
+                border: Colors.black,
               ),
             ),
             if (onClose != null)
@@ -133,6 +136,7 @@ class WindowPreviewCard extends StatelessWidget {
                       ? const Color(0xffef5350)
                       : const Color(0xffd32f2f),
                   background: buttonSurface,
+                  border: const Color(0xffd32f2f),
                 ),
               ),
           ],
@@ -146,12 +150,14 @@ class _PreviewControl extends StatelessWidget {
   final String tooltip;
   final IconData icon;
   final Color foreground, background;
+  final Color border;
   final VoidCallback? onPressed;
   const _PreviewControl({
     required this.tooltip,
     required this.icon,
     required this.foreground,
     required this.background,
+    required this.border,
     required this.onPressed,
   });
   @override
@@ -167,6 +173,7 @@ class _PreviewControl extends StatelessWidget {
             decoration: BoxDecoration(
               color: background,
               shape: BoxShape.circle,
+              border: Border.all(color: border, width: 1),
             ),
           ),
         ),

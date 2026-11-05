@@ -1,3 +1,4 @@
+import 'package:yr_file_explorer/shared/widgets/selection_drag_area.dart';
 import 'package:yr_file_explorer/core/utils/file_sort.dart';
 import 'package:yr_file_explorer/shared/dialogs/operation_progress_dialog.dart';
 
@@ -323,75 +324,84 @@ class _AnalysisResultsPageState extends State<AnalysisResultsPage> {
               onTap: () => showExplorerWindows(context),
             ),
           ],
-    body: error.isNotEmpty
-        ? EmptyState(
-            title: 'Analysis unavailable',
-            message: error,
-            action: TextButton(
-              onPressed: refresh,
-              child: const Text('Try again'),
+    body: SelectionDragArea(
+      selected: selected,
+      enabled: !busy,
+      onSelection: (id, value) => setState(() {
+        value ? selected.add(id) : selected.remove(id);
+      }),
+      child: error.isNotEmpty
+          ? EmptyState(
+              title: 'Analysis unavailable',
+              message: error,
+              action: TextButton(
+                onPressed: refresh,
+                child: const Text('Try again'),
+              ),
+            )
+          : rows.isEmpty
+          ? EmptyState(
+              icon: Icons.search_off,
+              title: busy ? 'Analyzing…' : 'No items found',
+              message: widget.kind == 'large'
+                  ? 'Files larger than 10 MB appear here.'
+                  : '',
+            )
+          : duplicates
+          ? duplicateList()
+          : ListView.builder(
+              padding: EdgeInsets.only(
+                bottom: ExplorerBottomBar.contentBottomPadding(context),
+              ),
+              itemCount: rows.length,
+              itemBuilder: (_, i) {
+                final e = rows[i], path = e['path'] as String;
+                void toggle() => setState(
+                  () => selected.contains(path)
+                      ? selected.remove(path)
+                      : selected.add(path),
+                );
+                return SelectionDragItem(
+                  id: path,
+                  child: ListTile(
+                    selected: selected.contains(path),
+                    leading: FileGlyph(e, size: 34),
+                    title: Text(
+                      e['name'],
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Text(
+                      '${sizeLabel(e['size'] ?? 0)} · $path',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 11),
+                    ),
+                    trailing: selected.isNotEmpty
+                        ? Checkbox(
+                            value: selected.contains(path),
+                            onChanged: (_) => toggle(),
+                          )
+                        : const Icon(Icons.chevron_right, size: 20),
+                    onTap: () async {
+                      if (selected.isNotEmpty) {
+                        toggle();
+                        return;
+                      }
+                      if (e['directory'] == true) {
+                        ExplorerWorkspaceSession.instance.open(path);
+                      } else {
+                        try {
+                          await Native.call('open', {'path': path});
+                        } catch (error) {
+                          if (context.mounted) showError(context, error);
+                        }
+                      }
+                    },
+                  ),
+                );
+              },
             ),
-          )
-        : rows.isEmpty
-        ? EmptyState(
-            icon: Icons.search_off,
-            title: busy ? 'Analyzing…' : 'No items found',
-            message: widget.kind == 'large'
-                ? 'Files larger than 10 MB appear here.'
-                : '',
-          )
-        : duplicates
-        ? duplicateList()
-        : ListView.builder(
-            padding: EdgeInsets.only(
-              bottom: ExplorerBottomBar.contentBottomPadding(context),
-            ),
-            itemCount: rows.length,
-            itemBuilder: (_, i) {
-              final e = rows[i], path = e['path'] as String;
-              void toggle() => setState(
-                () => selected.contains(path)
-                    ? selected.remove(path)
-                    : selected.add(path),
-              );
-              return ListTile(
-                selected: selected.contains(path),
-                leading: FileGlyph(e, size: 34),
-                title: Text(
-                  e['name'],
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                subtitle: Text(
-                  '${sizeLabel(e['size'] ?? 0)} · $path',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 11),
-                ),
-                trailing: selected.isNotEmpty
-                    ? Checkbox(
-                        value: selected.contains(path),
-                        onChanged: (_) => toggle(),
-                      )
-                    : const Icon(Icons.chevron_right, size: 20),
-                onLongPress: toggle,
-                onTap: () async {
-                  if (selected.isNotEmpty) {
-                    toggle();
-                    return;
-                  }
-                  if (e['directory'] == true) {
-                    ExplorerWorkspaceSession.instance.open(path);
-                  } else {
-                    try {
-                      await Native.call('open', {'path': path});
-                    } catch (error) {
-                      if (context.mounted) showError(context, error);
-                    }
-                  }
-                },
-              );
-            },
-          ),
+    ),
   );
 }

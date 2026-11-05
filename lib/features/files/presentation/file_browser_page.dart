@@ -1,3 +1,4 @@
+import 'package:yr_file_explorer/features/storage/presentation/pickers/local_directory_picker.dart';
 import 'package:yr_file_explorer/shared/widgets/grouped_file_view.dart';
 
 import 'widgets/split_pane_handle.dart';
@@ -37,6 +38,7 @@ import 'package:yr_file_explorer/shared/dialogs/input_dialogs.dart';
 import 'package:yr_file_explorer/shared/dialogs/view_menu.dart';
 import 'package:yr_file_explorer/shared/widgets/breadcrumbs.dart';
 import 'package:yr_file_explorer/shared/widgets/drag_selection_region.dart';
+import 'package:yr_file_explorer/shared/widgets/selection_drag_area.dart';
 import 'package:yr_file_explorer/shared/widgets/empty_state.dart';
 import 'package:yr_file_explorer/shared/widgets/file_glyph.dart';
 
@@ -66,12 +68,12 @@ class FileBrowser extends StatefulWidget {
     this.windowId,
   });
   @override
-  State<FileBrowser> createState() => _FileBrowserState();
+  State<FileBrowser> createState() => FileBrowserState();
 }
 
-class _FileBrowserState extends State<FileBrowser> with WidgetsBindingObserver {
+class FileBrowserState extends State<FileBrowser> with WidgetsBindingObserver {
   late String path;
-  final lowerPaneKey = GlobalKey<_FileBrowserState>();
+  final lowerPaneKey = GlobalKey<FileBrowserState>();
   bool lowerPaneActive = false, paneNotificationPending = false;
   double splitRatio = .5,
       splitDragY = 0,
@@ -664,6 +666,19 @@ class _FileBrowserState extends State<FileBrowser> with WidgetsBindingObserver {
           );
           await load();
           break;
+        case 'Move to Private Space':
+          await Native.call('privateUnlock');
+          if (!mounted) return;
+          await busy(
+            'Moving to Private Space…',
+            () => Native.call('privateImport', {'paths': dragRootPaths(paths)}),
+          );
+          if (!mounted) return;
+          selected.clear();
+          await load();
+          ExplorerWorkspaceSession.instance.openPage('private');
+          await Native.call('privateLock');
+          break;
         case 'Associate app':
           await Native.call('openExternal', {'path': paths.first});
           break;
@@ -1011,6 +1026,7 @@ class _FileBrowserState extends State<FileBrowser> with WidgetsBindingObserver {
           'Cut',
           'Copy to',
           'Move to',
+          'Move to Private Space',
           'Rename',
           'Delete',
           'Share',
@@ -1208,6 +1224,14 @@ class _FileBrowserState extends State<FileBrowser> with WidgetsBindingObserver {
                         ? null
                         : widget.embedded
                         ? widget.onClosePane
+                        : !document &&
+                              widget.category == null &&
+                              !widget.recent &&
+                              ExplorerWorkspaceSession.instance.volumeFor(
+                                    path,
+                                  )?['removable'] !=
+                                  true
+                        ? null
                         : () {
                             if (widget.windowId != null) {
                               ExplorerWorkspaceSession.instance.close(
@@ -1268,6 +1292,7 @@ class _FileBrowserState extends State<FileBrowser> with WidgetsBindingObserver {
                                   : 'Create a folder or paste files here.',
                             )
                           : DragSelectionRegion(
+                              continueFromLongPress: !folderDragging,
                               enabled: selected.isNotEmpty && !folderDragging,
                               itemKeys: selectionKeys,
                               scroll: filesScroll,
@@ -1289,9 +1314,6 @@ class _FileBrowserState extends State<FileBrowser> with WidgetsBindingObserver {
                                               'files-grid-${widget.windowId}-${widget.embedded}',
                                             ),
                                             controller: filesScroll,
-                                            physics: selected.isNotEmpty
-                                                ? const NeverScrollableScrollPhysics()
-                                                : null,
                                             padding: EdgeInsets.fromLTRB(
                                               12,
                                               14,
@@ -1336,9 +1358,6 @@ class _FileBrowserState extends State<FileBrowser> with WidgetsBindingObserver {
                                             widget.settings.groupDescending,
                                         child: ListView.builder(
                                           controller: filesScroll,
-                                          physics: selected.isNotEmpty
-                                              ? const NeverScrollableScrollPhysics()
-                                              : null,
                                           padding: EdgeInsets.only(
                                             bottom: widget.split
                                                 ? 12.0
@@ -1487,99 +1506,11 @@ class _FileBrowserState extends State<FileBrowser> with WidgetsBindingObserver {
   Widget _tool(IconData icon, String label, VoidCallback onTap) =>
       ExplorerAction(icon: icon, label: label, onTap: onTap);
 
-  Future<String?> chooseDirectory() {
-    var destination = path.startsWith('/') ? path : '/storage/emulated/0';
-    Future<List<Json>> listing = Native.rows('list', {
-      'path': destination,
-      'hidden': widget.settings.hidden,
-    });
-    return showDialog<String>(
-      context: context,
-      builder: (dialog) => StatefulBuilder(
-        builder: (dialog, update) => ExplorerDialog(
-          title: const Text('Select folder'),
-          contentPadding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-          content: SizedBox(
-            width: 320,
-            height: 360,
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    IconButton(
-                      tooltip: 'Parent folder',
-                      onPressed:
-                          !ExplorerWorkspaceSession.instance
-                              .containsStoragePath(parentPath(destination))
-                          ? null
-                          : () => update(() {
-                              destination = parentPath(destination);
-                              listing = Native.rows('list', {
-                                'path': destination,
-                                'hidden': widget.settings.hidden,
-                              });
-                            }),
-                      icon: const Icon(Icons.arrow_upward),
-                    ),
-                    Expanded(
-                      child: Text(
-                        destination,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                    ),
-                  ],
-                ),
-                Expanded(
-                  child: FutureBuilder<List<Json>>(
-                    future: listing,
-                    builder: (context, snapshot) {
-                      if (snapshot.hasError) {
-                        return Center(child: Text('${snapshot.error}'));
-                      }
-                      if (!snapshot.hasData) {
-                        return const Center(child: CircularProgressIndicator());
-                      }
-                      final folders = snapshot.data!
-                          .where((entry) => entry['directory'] == true)
-                          .toList();
-                      return ListView(
-                        children: [
-                          for (final folder in folders)
-                            ListTile(
-                              leading: FileGlyph(folder, size: 32),
-                              title: Text(folder['name']),
-                              onTap: () => update(() {
-                                destination = folder['path'];
-                                listing = Native.rows('list', {
-                                  'path': destination,
-                                  'hidden': widget.settings.hidden,
-                                });
-                              }),
-                            ),
-                        ],
-                      );
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialog),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(dialog, destination),
-              child: const Text('OK'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  Future<String?> chooseDirectory() => chooseLocalDirectory(
+    context,
+    initialPath: path,
+    hidden: widget.settings.hidden,
+  );
 
   Future<void> showNewMenu() async {
     final directory = await chooseNewItemType(context);
@@ -1600,7 +1531,15 @@ class _FileBrowserState extends State<FileBrowser> with WidgetsBindingObserver {
                 ].contains(name),
               )
               .toList()
-        : ['Favorite', 'Share', 'Copy to', 'Move to', 'Compress', 'Copy path'];
+        : [
+            'Favorite',
+            'Share',
+            'Copy to',
+            'Move to',
+            'Move to Private Space',
+            'Compress',
+            'Copy path',
+          ];
     final box = selectionMenuAnchor.currentContext?.findRenderObject();
     final overlay = Navigator.of(
       context,
@@ -1657,58 +1596,58 @@ class _FileBrowserState extends State<FileBrowser> with WidgetsBindingObserver {
           ? 'Access restricted'
           : '${e['items'] ?? '—'} items';
     }
-    return '${sizeLabel(e['size'])}  ·  ${dateLabel(e['modified'] ?? 0)}';
+    return [
+      sizeLabel(e['size'], decimals: 1),
+      listDateTimeLabel(e['modified'] ?? 0),
+    ].where((value) => value.isNotEmpty).join('  ·  ');
   }
 
   Widget _row(Json e) => ListTile(
     dense: widget.settings.viewMode.startsWith('Small'),
     selected: selected.contains(e['path']),
     selectedTileColor: primaryBlue.withValues(alpha: .08),
-    leading: selected.contains(e['path'])
-        ? const SizedBox(
-            width: 38,
-            child: Icon(Icons.check_circle, color: primaryBlue, size: 29),
-          )
-        : FileGlyph(
-            e,
-            size: widget.settings.viewMode.startsWith('Large')
-                ? 48
-                : widget.settings.viewMode.startsWith('Small')
-                ? 24
-                : 36,
-          ),
+    leading: SizedBox.square(
+      dimension: widget.settings.viewMode.startsWith('Large') ? 48 : 40,
+      child: Center(
+        child: selected.contains(e['path'])
+            ? const Icon(Icons.check_circle, color: primaryBlue, size: 29)
+            : FileGlyph(
+                e,
+                size: widget.settings.viewMode.startsWith('Large')
+                    ? 48
+                    : widget.settings.viewMode.startsWith('Small')
+                    ? 24
+                    : 36,
+              ),
+      ),
+    ),
     title: Text(
       displayFileName(e['name'].toString()),
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
       style: const TextStyle(fontSize: 14),
     ),
-    subtitle: widget.settings.viewMode.contains('Detail')
-        ? Text(
-            virtual ? '${subtitle(e)}\n${e['path']}' : subtitle(e),
-            maxLines: virtual ? 2 : 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 11, color: Colors.grey),
-          )
-        : null,
-    trailing: selected.isNotEmpty
-        ? Transform.scale(
-            scale: .75,
-            transformHitTests: false,
-            child: Checkbox(
-              value: selected.contains(e['path']),
-              onChanged: (_) => toggle(e['path']),
-            ),
-          )
-        : PopupMenuButton<String>(
-            tooltip: 'File actions',
-            onSelected: (v) => action(v, [e]),
-            itemBuilder: (_) =>
-                actions(e)
-                    .map((a) => PopupMenuItem(value: a, child: Text(a)))
-                    .toList(),
-          ),
-    onLongPress: canDragEntry(e) ? null : () => toggle(e['path']),
+    subtitle: Text(
+      virtual && widget.settings.viewMode.contains('Detail')
+          ? '${subtitle(e)}\n${e['path']}'
+          : subtitle(e),
+      maxLines: virtual && widget.settings.viewMode.contains('Detail') ? 2 : 1,
+      overflow: TextOverflow.ellipsis,
+      style: const TextStyle(fontSize: 11, color: Colors.grey),
+    ),
+    trailing: SizedBox.square(
+      dimension: 48,
+      child: selected.isNotEmpty
+          ? Transform.scale(
+              scale: .75,
+              transformHitTests: false,
+              child: Checkbox(
+                value: selected.contains(e['path']),
+                onChanged: (_) => toggle(e['path']),
+              ),
+            )
+          : null,
+    ),
     onTap: () => open(e),
   );
   bool canDragEntry(Json entry) =>
@@ -1763,7 +1702,7 @@ class _FileBrowserState extends State<FileBrowser> with WidgetsBindingObserver {
         final dragData = folderDragData(e);
         child = FolderDraggable(
           data: dragData,
-          isSelected: () => selected.contains(e['path']),
+          isSelected: () => selected.isNotEmpty,
           onHold: () {
             if (mounted) setState(() => selected.add(e['path'] as String));
           },
@@ -1801,6 +1740,8 @@ class _FileBrowserState extends State<FileBrowser> with WidgetsBindingObserver {
           child: child,
         );
       }
+    } else {
+      child = SelectionHold(onHold: () => toggle(e['path']), child: child);
     }
     return KeyedSubtree(
       key: selectionKeys.putIfAbsent(e['path'] as String, () => GlobalKey()),
@@ -1827,7 +1768,6 @@ class _FileBrowserState extends State<FileBrowser> with WidgetsBindingObserver {
     children: [
       Positioned.fill(
         child: InkWell(
-          onLongPress: canDragEntry(e) ? null : () => toggle(e['path']),
           onTap: () => open(e),
           child: Container(
             decoration: BoxDecoration(

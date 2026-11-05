@@ -1,4 +1,7 @@
+import 'remote_split_workspace.dart';
+
 import 'package:flutter/material.dart';
+import 'package:yr_file_explorer/features/private_space/presentation/private_space_page.dart';
 import 'package:yr_file_explorer/features/analysis/presentation/sd_card_analyst_page.dart';
 import 'package:yr_file_explorer/features/analysis/presentation/storage_analysis_page.dart';
 import 'package:yr_file_explorer/features/analysis/presentation/analysis_results_page.dart';
@@ -29,7 +32,21 @@ class WorkspaceWindow extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) => switch (window.page) {
+  Widget build(BuildContext context) {
+    final page = buildPage(context);
+    if (window.split && (window.page == 'ftp' || window.profile != null)) {
+      return RemoteSplitWorkspace(
+        windowId: window.id,
+        settings: settings,
+        clipboard: clipboard,
+        child: page,
+      );
+    }
+    return page;
+  }
+
+  Widget buildPage(BuildContext context) => switch (window.page) {
+    'private' => PrivateSpacePage(settings: settings, windowId: window.id),
     'analysis_results' => AnalysisResultsPage(
       settings: settings,
       clipboard: clipboard,

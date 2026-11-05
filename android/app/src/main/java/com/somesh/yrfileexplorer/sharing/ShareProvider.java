@@ -18,7 +18,8 @@ public class ShareProvider extends ContentProvider {
             File app = getContext().getFilesDir().getCanonicalFile();
             String path = f.getPath();
             // Never expose preferences, databases, keys, or other internal app data.
-            if (!(path.startsWith("/storage/") || path.startsWith("/sdcard/") || path.startsWith(app.getPath() + "/exports/"))) throw new FileNotFoundException("Path is not shareable");
+            if (!(com.somesh.yrfileexplorer.security.PrivateSpace.mayReadPreview(getContext(),f) || path.startsWith("/storage/") || path.startsWith("/sdcard/") || path.startsWith(app.getPath() + "/exports/"))) throw new FileNotFoundException("Path is not shareable");
+
             return f;
         } catch (IOException ex) { throw new FileNotFoundException(ex.getMessage()); }
     }
