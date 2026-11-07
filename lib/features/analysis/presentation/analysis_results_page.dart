@@ -15,6 +15,7 @@ import 'package:yr_file_explorer/core/platform/native_bridge.dart';
 import 'package:yr_file_explorer/core/settings/app_settings.dart';
 import 'package:yr_file_explorer/core/utils/file_format.dart';
 import 'package:yr_file_explorer/features/files/application/file_clipboard.dart';
+import 'package:yr_file_explorer/features/files/presentation/open_explorer_file.dart';
 import 'package:yr_file_explorer/features/workspace/application/workspace_session.dart';
 import 'package:yr_file_explorer/features/workspace/presentation/dialogs/windows_dialog.dart';
 import 'package:yr_file_explorer/features/workspace/presentation/widgets/explorer_pane.dart';
@@ -232,7 +233,12 @@ class _AnalysisResultsPageState extends State<AnalysisResultsPage> {
           ),
           onOpen: (file) async {
             try {
-              await Native.call('open', {'path': file['path']});
+              await openExplorerFile(
+                context,
+                file,
+                nearby: group.files,
+                recycle: widget.settings.recycle,
+              );
             } catch (e) {
               if (mounted) showError(context, e);
             }
@@ -312,6 +318,18 @@ class _AnalysisResultsPageState extends State<AnalysisResultsPage> {
                 }
               }),
             ),
+            if (duplicates && selected.length == 1)
+              ExplorerAction(
+                icon: Icons.folder_open_outlined,
+                label: 'Locate',
+                enabled: !busy,
+                onTap: () {
+                  if (selected.length != 1) return;
+                  ExplorerWorkspaceSession.instance.open(
+                    parentPath(selected.single),
+                  );
+                },
+              ),
             if (duplicates)
               ExplorerAction(
                 icon: Icons.deselect,
@@ -392,7 +410,12 @@ class _AnalysisResultsPageState extends State<AnalysisResultsPage> {
                         ExplorerWorkspaceSession.instance.open(path);
                       } else {
                         try {
-                          await Native.call('open', {'path': path});
+                          await openExplorerFile(
+                            context,
+                            e,
+                            nearby: rows,
+                            recycle: widget.settings.recycle,
+                          );
                         } catch (error) {
                           if (context.mounted) showError(context, error);
                         }

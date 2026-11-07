@@ -1,6 +1,6 @@
 # YR File Explorer
 
-Release notes: [v1.0.0](docs/releases/1.0.0.md).
+Release notes: [v1.0.1](docs/releases/1.0.1.md) · [v1.0.0](docs/releases/1.0.0.md).
 
 ## Overview
 

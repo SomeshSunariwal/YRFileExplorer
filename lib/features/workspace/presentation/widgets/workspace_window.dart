@@ -15,6 +15,8 @@ import 'package:yr_file_explorer/features/network/presentation/web_page.dart';
 import 'package:yr_file_explorer/features/network/presentation/download_page.dart';
 import 'package:yr_file_explorer/features/network/presentation/remote_browser_page.dart';
 import 'package:yr_file_explorer/features/recycle_bin/presentation/recycle_bin_page.dart';
+import 'package:yr_file_explorer/features/sharing/presentation/sharing_page.dart';
+import 'package:yr_file_explorer/features/sharing/presentation/sharing_history_page.dart';
 import 'package:yr_file_explorer/core/settings/app_settings.dart';
 import 'package:yr_file_explorer/features/files/application/file_clipboard.dart';
 import 'package:yr_file_explorer/features/workspace/application/workspace_session.dart';
@@ -33,7 +35,10 @@ class WorkspaceWindow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final page = buildPage(context);
+    final page = KeyedSubtree(
+      key: window.contentKey,
+      child: buildPage(context),
+    );
     if (window.split && (window.page == 'ftp' || window.profile != null)) {
       return RemoteSplitWorkspace(
         windowId: window.id,
@@ -47,6 +52,11 @@ class WorkspaceWindow extends StatelessWidget {
 
   Widget buildPage(BuildContext context) => switch (window.page) {
     'private' => PrivateSpacePage(settings: settings, windowId: window.id),
+    'sharing' => SharingPage(settings: settings, windowId: window.id),
+    'sharing_history' => SharingHistoryPage(
+      settings: settings,
+      windowId: window.id,
+    ),
     'analysis_results' => AnalysisResultsPage(
       settings: settings,
       clipboard: clipboard,

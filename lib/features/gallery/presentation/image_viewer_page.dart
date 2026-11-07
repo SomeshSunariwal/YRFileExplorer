@@ -1,3 +1,4 @@
+import 'package:yr_file_explorer/shared/widgets/explorer_notice.dart';
 import 'package:yr_file_explorer/shared/dialogs/explorer_dialog.dart';
 
 import 'dart:async';
@@ -106,8 +107,10 @@ class _ImageViewerState extends State<ImageViewer> with WidgetsBindingObserver {
       return;
     }
     if (images.length < 2) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('This folder contains one image')),
+      showExplorerNotice(
+        context,
+        'This folder contains one image',
+        icon: Icons.image_outlined,
       );
       return;
     }

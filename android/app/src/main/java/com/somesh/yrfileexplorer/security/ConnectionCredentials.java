@@ -1,11 +1,14 @@
 package com.somesh.yrfileexplorer.security;
 
 import android.content.Context;
-import android.security.keystore.*;
+import android.security.keystore.KeyGenParameterSpec;
+import android.security.keystore.KeyProperties;
 import android.util.Base64;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyStore;
-import javax.crypto.*;
+import javax.crypto.Cipher;
+import javax.crypto.KeyGenerator;
+import javax.crypto.SecretKey;
 import javax.crypto.spec.GCMParameterSpec;
 
 /** Optional saved passwords; only encrypted values enter private preferences. */

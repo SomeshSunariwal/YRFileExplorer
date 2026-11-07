@@ -23,13 +23,36 @@ import com.google.crypto.tink.streamingaead.StreamingAeadKeyTemplates;
 import io.flutter.plugin.common.MethodChannel;
 import org.json.JSONArray;
 import org.json.JSONObject;
-import java.io.*;
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.FilterOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.*;
+import java.nio.file.DirectoryStream;
+import java.nio.file.FileVisitResult;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.security.KeyStore;
 import java.security.MessageDigest;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.Executors;
 import javax.crypto.Cipher;
 import javax.crypto.KeyGenerator;
@@ -49,12 +72,13 @@ public final class PrivateSpace {
     private StreamingAead streaming;
     private JSONArray entries;
     private CancellationSignal prompt;
-    private int started;
+    private int started, resumed;
     private Runnable onLocked;
     private final Set<Activity> privateViewers = new HashSet<>();
     private boolean privateMedia;
     public void setOnLocked(Runnable callback) { onLocked = callback; }
     public void markPrivateMedia() { privateMedia = true; }
+    public void userLeaving() { if (!authenticating) lock(); }
 
     public static synchronized PrivateSpace get(Activity activity) {
         if (instance == null) instance = new PrivateSpace(activity.getApplication());
@@ -79,8 +103,13 @@ public final class PrivateSpace {
                 }
             }
             public void onActivityDestroyed(Activity a) { privateViewers.remove(a); }
-            public void onActivityResumed(Activity a) {}
-            public void onActivityPaused(Activity a) {}
+            public void onActivityResumed(Activity a) { resumed++; }
+            public void onActivityPaused(Activity a) {
+                resumed = Math.max(0, resumed - 1);
+                // onStop can be deferred during a launcher animation. Count resumed
+                // app activities so a fast Home/return cannot retain the session.
+                main.postDelayed(() -> { if (resumed == 0 && !authenticating) lock(); }, 180);
+            }
             public void onActivitySaveInstanceState(Activity a, Bundle b) {}
         });
         worker.execute(() -> eraseTree(previews.toPath()));
@@ -289,6 +318,9 @@ public final class PrivateSpace {
             if (!MessageDigest.isEqual(android.util.Base64.decode(row.getString("hash"), android.util.Base64.NO_WRAP), digest.digest())) throw new IOException("The source changed. It has been kept alongside its encrypted copy.");
         }
         Files.delete(Paths.get(row.getString("original")));
+        if (!row.getBoolean("directory")) {
+            android.media.MediaScannerConnection.scanFile(app, new String[]{row.getString("original")}, null, null);
+        }
     }
     private void exportNode(JSONObject row, Path destination) throws Exception {
         requireUnlocked();

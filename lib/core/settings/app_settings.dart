@@ -16,6 +16,9 @@ class AppSettings extends ChangeNotifier {
   String groupBy = 'None';
   bool groupDescending = false;
   bool backgroundPlayback = false;
+  String? sharingReceiveFolder;
+  String get sharingReceiveFolderLabel =>
+      sharingReceiveFolder ?? 'Download/YR Sharing';
   String viewMode = 'Medium Icon';
   bool descending = false;
   List<String> favorites = [], trees = [];
@@ -44,6 +47,11 @@ class AppSettings extends ChangeNotifier {
           : 'None';
       groupDescending = m['groupDescending'] == true;
       backgroundPlayback = m['backgroundPlayback'] == true;
+      final receiveFolder = m['sharingReceiveFolder'];
+      sharingReceiveFolder =
+          receiveFolder is String && receiveFolder.startsWith('/')
+          ? receiveFolder
+          : null;
       favorites = List<String>.from(m['favorites'] ?? []);
       trees = List<String>.from(m['trees'] ?? []);
       connections = jsonRows(m['connections']);
@@ -72,6 +80,7 @@ class AppSettings extends ChangeNotifier {
         'groupBy': groupBy,
         'groupDescending': groupDescending,
         'backgroundPlayback': backgroundPlayback,
+        'sharingReceiveFolder': sharingReceiveFolder,
         'favorites': favorites,
         'trees': trees,
         'connections': connections,

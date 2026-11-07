@@ -6,10 +6,24 @@ import android.graphics.Bitmap;
 import android.net.Uri;
 import android.net.http.SslError;
 import android.view.View;
-import android.webkit.*;
-import io.flutter.plugin.common.*;
-import io.flutter.plugin.platform.*;
-import java.util.*;
+import android.webkit.CookieManager;
+import android.webkit.HttpAuthHandler;
+import android.webkit.SslErrorHandler;
+import android.webkit.URLUtil;
+import android.webkit.WebChromeClient;
+import android.webkit.WebResourceError;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
+import io.flutter.plugin.common.BinaryMessenger;
+import io.flutter.plugin.common.MethodChannel;
+import io.flutter.plugin.common.StandardMessageCodec;
+import io.flutter.plugin.platform.PlatformView;
+import io.flutter.plugin.platform.PlatformViewFactory;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 
 /** Web content requested by the user; no local-file bridge or TLS bypass. */
 public final class WebBrowserView implements PlatformView {

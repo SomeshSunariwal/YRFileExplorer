@@ -60,15 +60,15 @@ class AnalysisUsageRow extends StatelessWidget {
                             )
                           : theme.colorScheme.surface,
                       borderRadius: BorderRadius.circular(10),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(
-                            alpha: dark ? .16 : .055,
-                          ),
-                          blurRadius: 6,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
+                      boxShadow: dark
+                          ? null
+                          : [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: .055),
+                                blurRadius: 6,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
                     ),
                     child: DecoratedBox(
                       position: DecorationPosition.foreground,

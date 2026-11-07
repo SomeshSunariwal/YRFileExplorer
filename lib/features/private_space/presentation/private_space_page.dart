@@ -22,6 +22,7 @@ import 'package:yr_file_explorer/shared/dialogs/view_menu.dart';
 import 'package:yr_file_explorer/shared/widgets/empty_state.dart';
 import 'package:yr_file_explorer/shared/widgets/file_glyph.dart';
 import 'package:yr_file_explorer/shared/widgets/selection_drag_area.dart';
+import 'package:yr_file_explorer/shared/widgets/explorer_notice.dart';
 
 class PrivateSpacePage extends StatefulWidget {
   final AppSettings settings;
@@ -92,6 +93,7 @@ class _PrivateSpacePageState extends State<PrivateSpacePage>
   }
 
   void lock({bool notifyNative = true}) {
+    if (unlocked || unlocking) dismissExplorerNotice();
     generation++;
     if (mounted) {
       setState(() {

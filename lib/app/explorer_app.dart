@@ -11,6 +11,7 @@ class YRExplorer extends StatelessWidget {
   static final _darkTheme = buildExplorerTheme(Brightness.dark);
   final AppSettings settings;
   const YRExplorer({super.key, required this.settings});
+
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: settings,

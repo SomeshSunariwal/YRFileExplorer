@@ -1,12 +1,15 @@
-import 'package:yr_file_explorer/shared/widgets/selection_drag_area.dart';
+import 'dart:async';
+
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:yr_file_explorer/core/models/json.dart';
 import 'package:yr_file_explorer/core/theme/file_categories.dart';
 import 'package:yr_file_explorer/core/utils/file_format.dart';
 import 'package:yr_file_explorer/features/analysis/domain/analysis_snapshot.dart';
 import 'package:yr_file_explorer/shared/widgets/file_glyph.dart';
+import 'package:yr_file_explorer/shared/widgets/selection_drag_area.dart';
 
-class DuplicateFileGroupCard extends StatelessWidget {
+class DuplicateFileGroupCard extends StatefulWidget {
   final DuplicateFileGroup group;
   final bool expanded, enabled;
   final Set<String> selected;
@@ -25,6 +28,40 @@ class DuplicateFileGroupCard extends StatelessWidget {
   });
 
   @override
+  State<DuplicateFileGroupCard> createState() => _DuplicateFileGroupCardState();
+}
+
+class _DuplicateFileGroupCardState extends State<DuplicateFileGroupCard> {
+  String? _lastTappedPath;
+  Timer? _doubleTapTimer;
+  DuplicateFileGroup get group => widget.group;
+  bool get expanded => widget.expanded;
+
+  void _clearDoubleTap() {
+    _doubleTapTimer?.cancel();
+    _lastTappedPath = null;
+  }
+
+  void _tapFile(Json file, String path) {
+    final open = _lastTappedPath == path;
+    _clearDoubleTap();
+    // Toggle immediately. A second tap restores the original selection before opening.
+    widget.onToggle(path);
+    if (open) {
+      widget.onOpen(file);
+    } else {
+      _lastTappedPath = path;
+      _doubleTapTimer = Timer(kDoubleTapTimeout, _clearDoubleTap);
+    }
+  }
+
+  @override
+  void dispose() {
+    _clearDoubleTap();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) => Material(
     color: Theme.of(context).colorScheme.surface,
     shape: RoundedRectangleBorder(
@@ -40,7 +77,10 @@ class DuplicateFileGroupCard extends StatelessWidget {
           button: true,
           label: group.name,
           child: InkWell(
-            onTap: onExpand,
+            onTap: () {
+              _clearDoubleTap();
+              widget.onExpand();
+            },
             child: ConstrainedBox(
               constraints: const BoxConstraints(minHeight: 48),
               child: Padding(
@@ -152,7 +192,8 @@ class DuplicateFileGroupCard extends StatelessWidget {
     double sizeHeight,
   ) {
     final path = file['path'] as String;
-    final checked = selected.contains(path);
+    final checked = widget.selected.contains(path);
+    final enabled = widget.enabled;
     final colors = Theme.of(context).colorScheme;
     final ext = path.split('.').last.toLowerCase();
     final visual = {
@@ -184,8 +225,7 @@ class DuplicateFileGroupCard extends StatelessWidget {
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: enabled ? () => onToggle(path) : null,
-        onDoubleTap: enabled ? () => onOpen(file) : null,
+        onTap: enabled ? () => _tapFile(file, path) : null,
         child: Padding(
           padding: const EdgeInsets.all(6),
           child: Column(
@@ -240,26 +280,35 @@ class DuplicateFileGroupCard extends StatelessWidget {
         children: [
           card,
           Positioned(
-            right: -14,
-            top: -14,
+            right: 0,
+            top: 0,
             child: SizedBox(
               width: 32,
               height: 32,
-              child: Transform.scale(
-                scale: .75,
+              child: Transform.translate(
+                offset: const Offset(8, -8),
                 transformHitTests: false,
-                child: Checkbox(
-                  value: checked,
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  visualDensity: VisualDensity.compact,
-                  fillColor: WidgetStateProperty.resolveWith(
-                    (states) => states.contains(WidgetState.selected)
-                        ? primaryBlue
-                        : colors.surface,
+                child: Transform.scale(
+                  scale: .75,
+                  transformHitTests: false,
+                  child: Checkbox(
+                    value: checked,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity: VisualDensity.compact,
+                    fillColor: WidgetStateProperty.resolveWith(
+                      (states) => states.contains(WidgetState.selected)
+                          ? primaryBlue
+                          : colors.surface,
+                    ),
+                    semanticLabel:
+                        'Select ${file['name']} at ${parentPath(path)} for deletion',
+                    onChanged: enabled
+                        ? (_) {
+                            _clearDoubleTap();
+                            widget.onToggle(path);
+                          }
+                        : null,
                   ),
-                  semanticLabel:
-                      'Select ${file['name']} at ${parentPath(path)} for deletion',
-                  onChanged: enabled ? (_) => onToggle(path) : null,
                 ),
               ),
             ),

@@ -1,3 +1,4 @@
+import 'package:yr_file_explorer/shared/widgets/explorer_notice.dart';
 import 'package:yr_file_explorer/shared/widgets/selection_drag_area.dart';
 import 'package:yr_file_explorer/shared/widgets/grouped_file_view.dart';
 import 'package:yr_file_explorer/shared/dialogs/explorer_dialog.dart';
@@ -253,10 +254,10 @@ class _AppsPageState extends State<AppsPage> with WidgetsBindingObserver {
         await Native.call('share', {'paths': exports});
       }
       if (action == 'Backup' && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${exports.length} backed up to backups/apps'),
-          ),
+        showExplorerNotice(
+          context,
+          '${exports.length} backed up to backups/apps',
+          icon: Icons.backup_outlined,
         );
       }
       if (mounted) setState(() => selected.clear());

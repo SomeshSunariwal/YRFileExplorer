@@ -33,8 +33,8 @@ class WindowPreviewCard extends StatelessWidget {
     final buttonSurface = colors.surface.withValues(alpha: .96);
     final bandColor = Color.lerp(surface, primaryBlue, selected ? .20 : .12)!;
     return Material(
-      elevation: 3,
-      shadowColor: Colors.black.withValues(alpha: dark ? .38 : .16),
+      elevation: dark ? 0 : 3,
+      shadowColor: Colors.black.withValues(alpha: .16),
       color: surface,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(18),
@@ -89,15 +89,15 @@ class WindowPreviewCard extends StatelessWidget {
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
                           color: colors.onSurface,
-                          shadows: [
-                            Shadow(
-                              color: Colors.black.withValues(
-                                alpha: dark ? .25 : .08,
-                              ),
-                              offset: const Offset(0, 1),
-                              blurRadius: 4,
-                            ),
-                          ],
+                          shadows: dark
+                              ? null
+                              : [
+                                  Shadow(
+                                    color: Colors.black.withValues(alpha: .08),
+                                    offset: const Offset(0, 1),
+                                    blurRadius: 4,
+                                  ),
+                                ],
                         ),
                       ),
                     ),
@@ -121,7 +121,7 @@ class WindowPreviewCard extends StatelessWidget {
                         buttonSurface,
                       )
                     : buttonSurface,
-                border: Colors.black,
+                border: dark ? Colors.black : Colors.white,
               ),
             ),
             if (onClose != null)
@@ -173,7 +173,7 @@ class _PreviewControl extends StatelessWidget {
             decoration: BoxDecoration(
               color: background,
               shape: BoxShape.circle,
-              border: Border.all(color: border, width: 1),
+              border: Border.all(color: border, width: .5),
             ),
           ),
         ),

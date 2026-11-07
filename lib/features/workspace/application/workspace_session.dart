@@ -20,6 +20,7 @@ class ExplorerWindow {
   final bool recent, search;
   final Json? profile;
   final previewKey = GlobalKey();
+  final contentKey = GlobalKey();
   bool locked = false;
   bool split = false;
   String? url;
@@ -38,6 +39,8 @@ class ExplorerWindow {
   });
   IconData get icon => switch (page) {
     'private' => Icons.lock_outline,
+    'sharing' => Icons.wifi_tethering_rounded,
+    'sharing_history' => Icons.swap_horiz_rounded,
     'apps' => Icons.android,
     'network' || 'ftp' || 'webdav' => Icons.dns_outlined,
     'web' => Icons.public,
@@ -79,6 +82,8 @@ class ExplorerWindow {
   String get label => switch (page) {
     'analysis' => 'Storage Analyzer',
     'storage_analysis' => 'Folder Analysis',
+    'sharing' => 'Sharing',
+    'sharing_history' => 'Sharing History',
     _ =>
       page == 'files' &&
               profile == null &&
@@ -379,6 +384,8 @@ class ExplorerWorkspaceSession extends ChangeNotifier {
       url: url,
       title: switch (page) {
         'private' => 'Private Space',
+        'sharing' => 'Sharing',
+        'sharing_history' => 'Sharing History',
         'apps' => 'APP',
         'network' => 'Network',
         'web' => 'Web',

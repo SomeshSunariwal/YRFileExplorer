@@ -186,11 +186,13 @@ class ExplorerChoiceTile extends StatelessWidget {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
+  final bool selected;
   const ExplorerChoiceTile({
     super.key,
     required this.icon,
     required this.label,
     required this.onTap,
+    this.selected = false,
   });
 
   @override
@@ -200,6 +202,10 @@ class ExplorerChoiceTile extends StatelessWidget {
     horizontalTitleGap: 12,
     leading: Icon(icon, size: 20, color: primaryBlue),
     title: Text(label, style: const TextStyle(fontSize: 14)),
+    selected: selected,
+    trailing: selected
+        ? const Icon(Icons.check_rounded, size: 20, color: primaryBlue)
+        : null,
     onTap: onTap,
   );
 }

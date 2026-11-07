@@ -2,14 +2,34 @@ package com.somesh.yrfileexplorer.media;
 
 import com.somesh.yrfileexplorer.sharing.ShareProvider;
 
-import android.app.*;
-import android.content.*;
-import android.media.*;
-import android.media.session.*;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
+import android.app.Service;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.media.AudioAttributes;
+import android.media.AudioFocusRequest;
+import android.media.AudioManager;
+import android.media.MediaMetadata;
+import android.media.MediaMetadataRetriever;
+import android.media.MediaPlayer;
+import android.media.session.MediaSession;
+import android.media.session.PlaybackState;
 import android.net.Uri;
-import android.os.*;
+import android.os.Binder;
+import android.os.Build;
+import android.os.Handler;
+import android.os.IBinder;
+import android.os.Looper;
+import android.os.PowerManager;
 import java.io.File;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Random;
 
 /** Local playback with system transport controls and explicit user-started foreground lifetime. */
 public class AudioPlaybackService extends Service {
@@ -72,7 +92,17 @@ public class AudioPlaybackService extends Service {
     }
     public void pause(){if(playing())player.pause();publish();}
     public void toggle(){if(playing())pause();else if(error!=null&&!prepared)startTrack();else play();}
-    public void select(int target){if(target>=0&&target<queue.size()){index=target;startTrack();}}
+    public void select(int target) {
+        if (target < 0 || target >= queue.size()) return;
+        if (target == index) {
+            if (error != null) startTrack();
+            else if (prepared && !playing()) play();
+            return;
+        }
+        index = target;
+        startTrack();
+    }
+
     public void next(int delta){if(queue.isEmpty())return;if(delta<0&&position()>3000){seek(0);return;}index=shuffle&&queue.size()>1?(index+1+random.nextInt(queue.size()-1))%queue.size():Math.floorMod(index+delta,queue.size());startTrack();}
     private void startTrack(){
         if(player!=null)player.release();prepared=false;loading=true;error=null;trackTitle="";artist="Unknown artist";artwork=null;player=new MediaPlayer();

@@ -1,5 +1,6 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:yr_file_explorer/core/gestures/interaction_timing.dart';
 
 import 'drag_selection_region.dart';
 
@@ -22,7 +23,7 @@ class SelectionHold extends StatelessWidget {
                   LongPressGestureRecognizer
                 >(
                   () => LongPressGestureRecognizer(
-                    duration: const Duration(seconds: 1),
+                    duration: InteractionTiming.hold,
                   ),
                   (recognizer) => recognizer..onLongPress = onHold,
                 ),

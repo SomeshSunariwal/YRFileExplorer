@@ -1,3 +1,4 @@
+import 'package:yr_file_explorer/shared/widgets/explorer_notice.dart';
 import 'package:yr_file_explorer/shared/widgets/selection_drag_area.dart';
 import 'package:yr_file_explorer/core/utils/file_sort.dart';
 import 'package:yr_file_explorer/shared/dialogs/explorer_dialog.dart';
@@ -239,8 +240,11 @@ class _RemoteBrowserState extends State<RemoteBrowser> {
         directory: e['directory'] == true,
       );
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Saved $target')));
+        showExplorerNotice(
+          context,
+          'Saved $target',
+          icon: Icons.download_outlined,
+        );
       }
     } catch (e) {
       if (!showFailure) rethrow;

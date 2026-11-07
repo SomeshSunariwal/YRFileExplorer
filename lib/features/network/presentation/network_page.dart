@@ -255,15 +255,15 @@ class _NetworkPageState extends State<NetworkPage> {
     child: DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(
-              alpha: widget.settings.dark ? .16 : .04,
-            ),
-            blurRadius: 12,
-            offset: const Offset(0, 3),
-          ),
-        ],
+        boxShadow: Theme.of(context).brightness == Brightness.dark
+            ? null
+            : [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: .04),
+                  blurRadius: 12,
+                  offset: const Offset(0, 3),
+                ),
+              ],
       ),
       child: Material(
         color: Theme.of(context).colorScheme.surface,

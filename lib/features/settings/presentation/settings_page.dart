@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
@@ -5,10 +7,44 @@ import 'package:yr_file_explorer/core/platform/native_bridge.dart';
 import 'package:yr_file_explorer/core/settings/app_settings.dart';
 import 'package:yr_file_explorer/core/theme/explorer_style.dart';
 import 'package:yr_file_explorer/core/theme/file_categories.dart';
+import 'package:yr_file_explorer/features/storage/presentation/pickers/local_directory_picker.dart';
+import 'package:yr_file_explorer/shared/dialogs/input_dialogs.dart';
 
 class SettingsPage extends StatelessWidget {
   final AppSettings settings;
   const SettingsPage({super.key, required this.settings});
+
+  Future<void> chooseReceiveFolder(BuildContext context) async {
+    try {
+      final defaultPath = await Native.call<String>(
+        'sharingDefaultReceiveFolder',
+      );
+      final volumes = await Native.rows('volumes');
+      final current = settings.sharingReceiveFolder ?? defaultPath;
+      final initialPath = current != null && await Directory(current).exists()
+          ? current
+          : volumes.where((volume) => volume['removable'] != true)
+                .firstOrNull?['path'] as String? ??
+                '/storage/emulated/0';
+      if (!context.mounted) return;
+      final path = await chooseLocalDirectory(
+        context,
+        initialPath: initialPath,
+        hidden: settings.hidden,
+        volumes: volumes,
+        defaultPath: settings.sharingReceiveFolder == null ? null : defaultPath,
+      );
+      if (path == null || !context.mounted) return;
+      settings.sharingReceiveFolder = path == defaultPath
+          ? null
+          : await Native.call<String>('sharingValidateReceiveFolder', {
+              'path': path,
+            });
+      await settings.save();
+    } catch (error) {
+      if (context.mounted) showError(context, error);
+    }
+  }
 
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
@@ -65,7 +101,7 @@ class SettingsPage extends StatelessWidget {
                                 ),
                                 SizedBox(height: 4),
                                 Text(
-                                  'Version 1.0.0',
+                                  'Version 1.0.1',
                                   style: TextStyle(
                                     fontSize: 12,
                                     color: Colors.grey,
@@ -105,7 +141,7 @@ class SettingsPage extends StatelessWidget {
                     ),
                   ],
                 ),
-                const _Section('Files & storage'),
+                const _Section('Files & sharing'),
                 _SettingsCard(
                   children: [
                     _toggle(
@@ -137,6 +173,12 @@ class SettingsPage extends StatelessWidget {
                         settings.recycle = v;
                         settings.save();
                       },
+                    ),
+                    _action(
+                      'Received files location',
+                      settings.sharingReceiveFolderLabel,
+                      Icons.folder_open_outlined,
+                      () => chooseReceiveFolder(context),
                     ),
                   ],
                 ),

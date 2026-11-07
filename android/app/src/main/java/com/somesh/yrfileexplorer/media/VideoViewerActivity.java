@@ -21,7 +21,13 @@ import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.VideoView;
 import java.util.Locale;
-import static com.somesh.yrfileexplorer.media.ViewerUi.*;
+import static com.somesh.yrfileexplorer.media.ViewerUi.CYAN;
+import static com.somesh.yrfileexplorer.media.ViewerUi.button;
+import static com.somesh.yrfileexplorer.media.ViewerUi.dp;
+import static com.somesh.yrfileexplorer.media.ViewerUi.iconButton;
+import static com.somesh.yrfileexplorer.media.ViewerUi.rounded;
+import static com.somesh.yrfileexplorer.media.ViewerUi.row;
+import static com.somesh.yrfileexplorer.media.ViewerUi.text;
 
 /** Local video viewer with floating controls; the video viewport never resizes. */
 public class VideoViewerActivity extends Activity {
@@ -59,6 +65,7 @@ public class VideoViewerActivity extends Activity {
     }
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        boolean dark = ViewerUi.isDark(this);
         position = state == null ? 0 : state.getInt("position");
         playingBeforePause = state == null || state.getBoolean("playing", true);
         fill = state != null && state.getBoolean("fill");
@@ -89,7 +96,7 @@ public class VideoViewerActivity extends Activity {
 
         header = row(this);
         header.setBackground(rounded(this, 0xee333333, 20));
-        header.setElevation(dp(this, 4));
+        header.setElevation(dark ? 0 : dp(this, 4));
         ImageButton back = iconButton(this, R.drawable.ic_viewer_back, "Back", this::finish);
         back.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
         back.setPadding(dp(this, 10), dp(this, 10), dp(this, 10), dp(this, 10));
@@ -104,7 +111,8 @@ public class VideoViewerActivity extends Activity {
 
         panel = new LinearLayout(this); panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(dp(this, 12), dp(this, 4), dp(this, 12), dp(this, 4));
-        panel.setBackground(rounded(this, 0xee333333, 24)); panel.setElevation(dp(this, 6));
+        panel.setBackground(rounded(this, 0xee333333, 24));
+        panel.setElevation(dark ? 0 : dp(this, 6));
         LinearLayout timeline = row(this);
         elapsed = text(this, "00:00", 11, Color.WHITE);
         duration = text(this, "00:00", 11, Color.WHITE);
@@ -153,9 +161,11 @@ public class VideoViewerActivity extends Activity {
         video.setOnCompletionListener(player -> { showControls(true); handler.removeCallbacks(hide); });
         video.setOnErrorListener((player, what, extra) -> {
             ready = false; loading.setVisibility(View.GONE); play.setEnabled(false); seek.setEnabled(false);
-            new AlertDialog.Builder(this).setTitle("Playback unavailable")
+            AlertDialog dialog = new AlertDialog.Builder(this).setTitle("Playback unavailable")
                 .setMessage("This video could not be played. Try another player.")
-                .setPositiveButton("Open with", (d, w) -> external()).setNegativeButton("Close", (d, w) -> finish()).show();
+                .setPositiveButton("Open with", (d, w) -> external())
+                .setNegativeButton("Close", (d, w) -> finish()).create();
+            ViewerUi.showDialog(dialog, dark);
             return true;
         });
         handler.post(tick);

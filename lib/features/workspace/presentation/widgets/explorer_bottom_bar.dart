@@ -25,18 +25,20 @@ class ExplorerBottomBar extends StatelessWidget {
         child: DecoratedBox(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(999),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: dark ? .26 : .07),
-                blurRadius: 20,
-                offset: const Offset(0, 6),
-              ),
-              BoxShadow(
-                color: Colors.black.withValues(alpha: dark ? .12 : .025),
-                blurRadius: 4,
-                offset: const Offset(0, 1),
-              ),
-            ],
+            boxShadow: dark
+                ? null
+                : [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: .07),
+                      blurRadius: 20,
+                      offset: const Offset(0, 6),
+                    ),
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: .025),
+                      blurRadius: 4,
+                      offset: const Offset(0, 1),
+                    ),
+                  ],
           ),
           child: Material(
             color: explorerChrome(context),

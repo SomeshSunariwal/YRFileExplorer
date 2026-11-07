@@ -19,23 +19,54 @@ import com.somesh.yrfileexplorer.network.TransferServer;
 import com.somesh.yrfileexplorer.security.ConnectionCredentials;
 import com.somesh.yrfileexplorer.sharing.ShareProvider;
 
-import android.app.*;
-import android.content.*;
-import android.content.pm.*;
+import android.content.BroadcastReceiver;
+import android.content.ClipData;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.content.SharedPreferences;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageManager;
+import android.content.pm.ShortcutInfo;
 import android.database.Cursor;
 import android.net.Uri;
-import android.os.*;
-import android.os.storage.*;
-import android.provider.*;
+import android.os.Build;
+import android.os.Environment;
+import android.os.storage.StorageManager;
+import android.os.storage.StorageVolume;
+import android.provider.Settings;
 import io.flutter.embedding.android.FlutterActivity;
 import io.flutter.embedding.engine.FlutterEngine;
-import io.flutter.plugin.common.*;
-import org.json.*;
-import java.io.*;
-import java.nio.file.*;
+import io.flutter.plugin.common.EventChannel;
+import io.flutter.plugin.common.MethodCall;
+import io.flutter.plugin.common.MethodChannel;
+import org.json.JSONObject;
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InterruptedIOException;
+import java.nio.file.FileAlreadyExistsException;
+import java.nio.file.FileSystemException;
+import java.nio.file.FileVisitResult;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
-import java.util.*;
-import java.util.concurrent.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class MainActivity extends FlutterActivity {
@@ -49,7 +80,8 @@ public class MainActivity extends FlutterActivity {
 
     private final AtomicBoolean lanCancelled = new AtomicBoolean();
     private NetworkEngine network;
-    private TransferServer transfer;
+    private TransferServer transfer;
+    private com.somesh.yrfileexplorer.sharing.WifiDirectSharing sharing;
 
     @Override public void configureFlutterEngine(FlutterEngine engine) {
         super.configureFlutterEngine(engine);
@@ -62,7 +94,9 @@ public class MainActivity extends FlutterActivity {
             @Override public void onListen(Object args, EventChannel.EventSink sink) { events = sink; }
             @Override public void onCancel(Object args) { events = null; }
         });
-        new MethodChannel(engine.getDartExecutor().getBinaryMessenger(), "yr/files").setMethodCallHandler((call, result) -> {
+        sharing = new com.somesh.yrfileexplorer.sharing.WifiDirectSharing(this, event -> { if(events != null) events.success(event); });
+        new MethodChannel(engine.getDartExecutor().getBinaryMessenger(), "yr/files").setMethodCallHandler((call, result) -> {
+            if(call.method.startsWith("sharing")) { sharing.handle(call,result); return; }
             try {
                 switch (call.method) {
                     case "privateUnlock": com.somesh.yrfileexplorer.security.PrivateSpace.get(this).unlock(this, result); return;
@@ -342,7 +376,7 @@ public class MainActivity extends FlutterActivity {
     }
     private void open(String path, boolean external) {
 
-        if(path.startsWith(new File(getCacheDir(),"private-space-previews").getPath()+"/")) com.somesh.yrfileexplorer.security.PrivateSpace.get(this).markPrivateMedia();
+
 
 
 
@@ -361,20 +395,21 @@ public class MainActivity extends FlutterActivity {
         String mime=path.startsWith("content:")?getContentResolver().getType(u):new ShareProvider().getType(u);
         if(path.endsWith(".apk"))mime="application/vnd.android.package-archive";
         if(!external && ("application/pdf".equals(mime) || path.toLowerCase(Locale.ROOT).endsWith(".pdf"))) {
-            startActivity(new Intent(this,PdfReaderActivity.class).setDataAndType(u,"application/pdf").putExtra("title",new File(path).getName()).putExtra("privateSpace",path.startsWith(new File(getCacheDir(),"private-space-previews").getPath()+"/")).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)); return;
+            startActivity(new Intent(this,PdfReaderActivity.class).setDataAndType(u,"application/pdf").putExtra("title",new File(path).getName()).putExtra("privateSpace",path.startsWith(new File(getCacheDir(),"private-space-previews").getPath()+"/")).addFlags(Intent.FLAG_ACTIVITY_NO_USER_ACTION).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)); return;
 
         }
         if(!external && mime!=null && mime.startsWith("video/")) {
-            startActivity(new Intent(this,VideoViewerActivity.class).setDataAndType(u,mime).putExtra("title",new File(path).getName()).putExtra("privateSpace",path.startsWith(new File(getCacheDir(),"private-space-previews").getPath()+"/")).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)); return;
+            startActivity(new Intent(this,VideoViewerActivity.class).setDataAndType(u,mime).putExtra("title",new File(path).getName()).putExtra("privateSpace",path.startsWith(new File(getCacheDir(),"private-space-previews").getPath()+"/")).addFlags(Intent.FLAG_ACTIVITY_NO_USER_ACTION).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)); return;
 
         }
-        if(!external && mime!=null && (mime.startsWith("video/")||mime.startsWith("audio/"))) {
+        if(!external && mime!=null && (mime.startsWith("video/")||mime.startsWith("audio/"))) {
+        if(path.startsWith(new File(getCacheDir(),"private-space-previews").getPath()+"/")) com.somesh.yrfileexplorer.security.PrivateSpace.get(this).markPrivateMedia();
             ArrayList<String> playlist=new ArrayList<>();
             if(mime.startsWith("audio/")&&!path.startsWith("content:")) {
                 File parent=new File(path).getParentFile();File[] files=parent==null?null:parent.listFiles(f->f.isFile()&&com.somesh.yrfileexplorer.media.AudioFormats.isAudio(f.getName()));
                 if(files!=null){Arrays.sort(files,Comparator.comparing(File::getName,String.CASE_INSENSITIVE_ORDER));for(File f:files)playlist.add(f.getAbsolutePath());}
             }
-            startActivity(new Intent(this,MediaViewerActivity.class).setDataAndType(u,mime).putExtra("title",new File(path).getName()).putExtra("privateSpace",path.startsWith(new File(getCacheDir(),"private-space-previews").getPath()+"/")).putExtra("sourcePath",path).putStringArrayListExtra("playlist",playlist).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)); return;
+            startActivity(new Intent(this,MediaViewerActivity.class).setDataAndType(u,mime).putExtra("title",new File(path).getName()).putExtra("privateSpace",path.startsWith(new File(getCacheDir(),"private-space-previews").getPath()+"/")).addFlags(Intent.FLAG_ACTIVITY_NO_USER_ACTION).putExtra("sourcePath",path).putStringArrayListExtra("playlist",playlist).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)); return;
 
         }
         Intent i=new Intent(Intent.ACTION_VIEW).setDataAndType(u,mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
@@ -388,7 +423,8 @@ public class MainActivity extends FlutterActivity {
         startActivity(Intent.createChooser(i,"Share files"));
     }
     @Override public void onRequestPermissionsResult(int request,String[] permissions,int[] results){
-        super.onRequestPermissionsResult(request,permissions,results);
+        super.onRequestPermissionsResult(request,permissions,results);
+        if(sharing!=null && sharing.permissionResult(request,results)) return;
         if(request==904 && localNetworkPermissionResult!=null) { MethodChannel.Result pending=localNetworkPermissionResult; localNetworkPermissionResult=null; pending.success(results.length>0 && results[0]==PackageManager.PERMISSION_GRANTED); }
         if(request==903&&bluetoothPermissionResult!=null){MethodChannel.Result pending=bluetoothPermissionResult;bluetoothPermissionResult=null;boolean allowed=results.length>0;for(int grant:results)allowed&=grant==PackageManager.PERMISSION_GRANTED;pending.success(allowed);}
     }
@@ -405,9 +441,12 @@ public class MainActivity extends FlutterActivity {
             catch(SecurityException e){r.error("PROVIDER_PERMISSION",e.getMessage(),null);}
         }
     }
+    @Override public void onUserLeaveHint() { super.onUserLeaveHint(); com.somesh.yrfileexplorer.security.PrivateSpace.get(this).userLeaving(); }
+
     @Override protected void onDestroy() {
         for(AtomicBoolean flag:scans.values())flag.set(true);
         if(bluetoothReceiver!=null)unregisterReceiver(bluetoothReceiver);
+        if(sharing!=null)sharing.close();
         if(transfer!=null)transfer.close(); workers.shutdownNow(); super.onDestroy();
     }
 }

@@ -236,6 +236,8 @@ class _ExplorerWorkspaceState extends State<ExplorerWorkspace> {
       'bluetooth',
       'netmanager',
       'downloads',
+      'sharing',
+      'sharing_history',
     ].contains(page)) {
       session.openPage(page);
       return;

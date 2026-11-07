@@ -24,6 +24,7 @@ import 'package:yr_file_explorer/shared/widgets/empty_state.dart';
 import 'package:yr_file_explorer/shared/widgets/drag_selection_region.dart';
 import 'package:yr_file_explorer/features/analysis/presentation/widgets/analysis_usage_row.dart';
 import 'package:yr_file_explorer/features/files/application/file_clipboard.dart';
+import 'package:yr_file_explorer/features/files/presentation/open_explorer_file.dart';
 import 'package:yr_file_explorer/shared/dialogs/input_dialogs.dart';
 
 class SdCardAnalyst extends StatefulWidget {
@@ -437,16 +438,24 @@ class _SdCardAnalystState extends State<SdCardAnalyst> {
                                             ? selected.remove(e['path'])
                                             : selected.add(e['path']),
                                       ),
-                                      onOpen: () => e['directory'] == true
-                                          ? go(e['path'])
-                                          : Native.call('open', {
-                                              'path': e['path'],
-                                            }).catchError((Object error) {
-                                              if (context.mounted) {
-                                                showError(context, error);
-                                              }
-                                              return null;
-                                            }),
+                                      onOpen: () async {
+                                        if (e['directory'] == true) {
+                                          go(e['path']);
+                                          return;
+                                        }
+                                        try {
+                                          await openExplorerFile(
+                                            context,
+                                            e,
+                                            nearby: entries,
+                                            recycle: widget.settings.recycle,
+                                          );
+                                        } catch (error) {
+                                          if (context.mounted) {
+                                            showError(context, error);
+                                          }
+                                        }
+                                      },
                                     ),
                                   );
                                 },
@@ -465,13 +474,15 @@ class _SdCardAnalystState extends State<SdCardAnalyst> {
             child: DecoratedBox(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(999),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: dark ? .24 : .12),
-                    blurRadius: 6,
-                    offset: const Offset(0, 1),
-                  ),
-                ],
+                boxShadow: dark
+                    ? null
+                    : [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: .12),
+                          blurRadius: 6,
+                          offset: const Offset(0, 1),
+                        ),
+                      ],
               ),
               child: Semantics(
                 label: total > 0

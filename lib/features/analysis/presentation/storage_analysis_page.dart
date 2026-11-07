@@ -1,3 +1,5 @@
+import 'package:yr_file_explorer/shared/widgets/explorer_notice.dart';
+
 import 'dart:async';
 
 import 'package:yr_file_explorer/features/analysis/domain/analysis_snapshot.dart';
@@ -173,8 +175,10 @@ class _AnalysisPageState extends State<AnalysisPage> {
     }
     await Clipboard.setData(ClipboardData(text: text.toString()));
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Analysis report copied to clipboard')),
+      showExplorerNotice(
+        context,
+        'Analysis report copied to clipboard',
+        icon: Icons.copy_outlined,
       );
     }
   }

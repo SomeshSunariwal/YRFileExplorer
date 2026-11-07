@@ -1,8 +1,8 @@
+import 'package:yr_file_explorer/shared/widgets/explorer_notice.dart';
 import 'package:yr_file_explorer/shared/widgets/selection_drag_area.dart';
 import 'package:yr_file_explorer/shared/widgets/grouped_file_view.dart';
 import 'package:yr_file_explorer/shared/dialogs/explorer_dialog.dart';
 import 'package:yr_file_explorer/features/workspace/presentation/widgets/explorer_bottom_bar.dart';
-import 'package:yr_file_explorer/core/theme/explorer_style.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:yr_file_explorer/core/utils/file_sort.dart';
@@ -12,9 +12,8 @@ import 'package:yr_file_explorer/core/platform/native_bridge.dart';
 import 'package:yr_file_explorer/core/settings/app_settings.dart';
 import 'package:yr_file_explorer/core/theme/file_categories.dart';
 import 'package:yr_file_explorer/core/utils/file_format.dart';
-import 'package:yr_file_explorer/features/editor/presentation/text_editor_page.dart';
 import 'package:yr_file_explorer/features/files/application/file_clipboard.dart';
-import 'package:yr_file_explorer/features/gallery/presentation/image_viewer_page.dart';
+import 'package:yr_file_explorer/features/files/presentation/open_explorer_file.dart';
 import 'package:yr_file_explorer/features/storage/presentation/dialogs/storage_locations_dialog.dart';
 import 'package:yr_file_explorer/features/workspace/application/workspace_session.dart';
 import 'package:yr_file_explorer/features/workspace/presentation/dialogs/windows_dialog.dart';
@@ -221,26 +220,7 @@ class _ArchivePageState extends State<ArchivePage> {
         'entry': entry['path'],
       }))!;
       if (!mounted) return;
-      if (entry['category'] == 'Images') {
-        await Navigator.push(
-          context,
-          ExplorerPageRoute<void>(
-            builder: (_) => ImageViewer(path: file, canDelete: false),
-          ),
-        );
-      } else if (RegExp(
-        r'\.(txt|md|json|xml|csv|log|yaml|yml|ini|java|dart|js|css|html)$',
-        caseSensitive: false,
-      ).hasMatch(file)) {
-        await Navigator.push(
-          context,
-          ExplorerPageRoute<void>(
-            builder: (_) => TextEditor(path: file, readOnly: true),
-          ),
-        );
-      } else {
-        await Native.call('open', {'path': file});
-      }
+      await openExplorerFile(context, {...entry, 'path': file}, readOnly: true);
     } catch (e) {
       password = '';
       if (mounted) showError(context, e);
@@ -278,15 +258,12 @@ class _ArchivePageState extends State<ArchivePage> {
             : selected.toList(),
       });
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Extracted to $destination'),
-            action: SnackBarAction(
-              label: 'Open',
-              onPressed: () =>
-                  ExplorerWorkspaceSession.instance.open(destination),
-            ),
-          ),
+        showExplorerNotice(
+          context,
+          'Extracted to $destination',
+          icon: Icons.unarchive_outlined,
+          actionLabel: 'Open',
+          onAction: () => ExplorerWorkspaceSession.instance.open(destination),
         );
         setState(() => selected.clear());
       }
@@ -315,10 +292,10 @@ class _ArchivePageState extends State<ArchivePage> {
       widget.clipboard.put(files, false);
       if (mounted) {
         setState(() => selected.clear());
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Choose a folder and paste the extracted files.'),
-          ),
+        showExplorerNotice(
+          context,
+          'Choose a folder and paste the extracted files.',
+          icon: Icons.content_paste,
         );
       }
     } catch (e) {
@@ -346,15 +323,15 @@ class _ArchivePageState extends State<ArchivePage> {
             ExplorerChoiceTile(
               icon: Icons.translate,
               label: name,
+              selected: name == charset,
               onTap: () => Navigator.pop(dialog, name),
             ),
         ],
       ),
     );
-    if (value != null) {
-      charset = value;
-      await load();
-    }
+    if (!mounted || value == null || value == charset) return;
+    charset = value;
+    await load();
   }
 
   List<(String, String)> get breadcrumbs {

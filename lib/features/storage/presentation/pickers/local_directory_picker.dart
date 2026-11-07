@@ -10,13 +10,18 @@ Future<String?> chooseLocalDirectory(
   BuildContext context, {
   required String initialPath,
   bool hidden = false,
+  List<Json> volumes = const [],
+  String? defaultPath,
 }) {
   var destination = initialPath.startsWith('/')
       ? initialPath
       : '/storage/emulated/0';
-  Future<List<Json>> listing = Native.rows('list', {
-    'path': destination,
-    'hidden': hidden,
+  Future<List<Json>> listFolders(String path) =>
+      Native.rows('list', {'path': path, 'hidden': hidden});
+  var listing = listFolders(destination);
+  void navigate(StateSetter update, String path) => update(() {
+    destination = path;
+    listing = listFolders(path);
   });
   return showDialog<String>(
     context: context,
@@ -34,17 +39,17 @@ Future<String?> chooseLocalDirectory(
                   IconButton(
                     tooltip: 'Parent folder',
                     onPressed:
-                        !ExplorerWorkspaceSession.instance.containsStoragePath(
-                          parentPath(destination),
-                        )
+                        !(volumes.isEmpty
+                            ? ExplorerWorkspaceSession.instance
+                                  .containsStoragePath(parentPath(destination))
+                            : volumes.any((volume) {
+                                final root = volume['path'] as String;
+                                final parent = parentPath(destination);
+                                return parent == root ||
+                                    parent.startsWith('$root/');
+                              }))
                         ? null
-                        : () => update(() {
-                            destination = parentPath(destination);
-                            listing = Native.rows('list', {
-                              'path': destination,
-                              'hidden': hidden,
-                            });
-                          }),
+                        : () => navigate(update, parentPath(destination)),
                     icon: const Icon(Icons.arrow_upward),
                   ),
                   Expanded(
@@ -55,6 +60,19 @@ Future<String?> chooseLocalDirectory(
                       style: const TextStyle(fontSize: 12),
                     ),
                   ),
+                  if (volumes.length > 1)
+                    PopupMenuButton<String>(
+                      tooltip: 'Switch storage',
+                      icon: const Icon(Icons.sd_storage_outlined),
+                      onSelected: (path) => navigate(update, path),
+                      itemBuilder: (_) => [
+                        for (final volume in volumes)
+                          PopupMenuItem(
+                            value: volume['path'] as String,
+                            child: Text(volume['name'] as String),
+                          ),
+                      ],
+                    ),
                 ],
               ),
               Expanded(
@@ -76,13 +94,7 @@ Future<String?> chooseLocalDirectory(
                           ListTile(
                             leading: FileGlyph(folder, size: 32),
                             title: Text(folder['name']),
-                            onTap: () => update(() {
-                              destination = folder['path'];
-                              listing = Native.rows('list', {
-                                'path': destination,
-                                'hidden': hidden,
-                              });
-                            }),
+                            onTap: () => navigate(update, folder['path']),
                           ),
                       ],
                     );
@@ -97,6 +109,11 @@ Future<String?> chooseLocalDirectory(
             onPressed: () => Navigator.pop(dialog),
             child: const Text('Cancel'),
           ),
+          if (defaultPath != null)
+            TextButton(
+              onPressed: () => Navigator.pop(dialog, defaultPath),
+              child: const Text('Use default'),
+            ),
           TextButton(
             onPressed: () => Navigator.pop(dialog, destination),
             child: const Text('OK'),

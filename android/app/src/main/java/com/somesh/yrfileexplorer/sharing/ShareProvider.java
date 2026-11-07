@@ -1,12 +1,16 @@
 package com.somesh.yrfileexplorer.sharing;
 
-import android.content.*;
-import android.database.*;
+import android.content.ContentProvider;
+import android.content.ContentValues;
+import android.database.Cursor;
+import android.database.MatrixCursor;
 import android.net.Uri;
-import android.os.*;
+import android.os.ParcelFileDescriptor;
 import android.provider.OpenableColumns;
 import android.webkit.MimeTypeMap;
-import java.io.*;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.IOException;
 
 /** Non-exported provider. Only explicitly granted, read-only URIs can be opened. */
 public class ShareProvider extends ContentProvider {

@@ -3,17 +3,37 @@ package com.somesh.yrfileexplorer.network;
 import com.somesh.yrfileexplorer.files.FileEngine;
 import com.somesh.yrfileexplorer.storage.FolderAnalyzer;
 
-import android.bluetooth.*;
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothSocket;
 import android.content.Context;
 import android.util.Xml;
 import org.xmlpull.v1.XmlPullParser;
-import java.io.*;
-import java.nio.*;
+import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.StringReader;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.*;
+import java.nio.file.DirectoryStream;
+import java.nio.file.FileAlreadyExistsException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
-import java.util.*;
-import java.util.concurrent.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 /** Independent OBEX File Transfer client. Peer support and Android pairing are required. */
 public final class BluetoothFiles implements AutoCloseable {

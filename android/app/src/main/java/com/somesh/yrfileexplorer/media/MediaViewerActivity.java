@@ -3,18 +3,45 @@ package com.somesh.yrfileexplorer.media;
 import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.app.Dialog;
-import android.content.*;
+import android.content.ComponentName;
+import android.content.Intent;
+import android.content.ServiceConnection;
 import android.content.res.ColorStateList;
-import android.graphics.*;
+import android.graphics.Bitmap;
+import android.graphics.Color;
+import android.graphics.Insets;
+import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
-import android.os.*;
+import android.os.Bundle;
+import android.os.Environment;
+import android.os.Handler;
+import android.os.IBinder;
+import android.os.Looper;
 import android.text.TextUtils;
-import android.view.*;
-import android.widget.*;
+import android.view.Gravity;
+import android.view.MotionEvent;
+import android.view.View;
+import android.view.ViewGroup;
+import android.view.Window;
+import android.view.WindowInsets;
+import android.widget.BaseAdapter;
+import android.widget.EditText;
+import android.widget.FrameLayout;
+import android.widget.HorizontalScrollView;
+import android.widget.ImageButton;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
+import android.widget.ListView;
+import android.widget.ProgressBar;
+import android.widget.ScrollView;
+import android.widget.SeekBar;
+import android.widget.TextView;
+import android.widget.Toast;
 import com.somesh.yrfileexplorer.R;
 import com.somesh.yrfileexplorer.files.FileEngine;
 import java.io.File;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Locale;
 
 /** Local music dashboard using the same surfaces, icons and spacing as Explorer. */
 public class MediaViewerActivity extends Activity {
@@ -31,13 +58,14 @@ public class MediaViewerActivity extends Activity {
     }
     private final Handler handler=new Handler(Looper.getMainLooper());
     private AudioPlaybackService audio;
-    private boolean bound,seeking,queueVisible;
+    private boolean bound,seeking,queueVisible,resumed,dark;
     private TextView header,title,artist,status,elapsed,duration,playingTab,playlistTab;
     private ImageButton play,shuffle,repeat;
     private int displayedRepeat=-1;
     private ImageView artwork,placeholder;
     private Bitmap displayedArtwork;
     private SeekBar seek;
+    private AudioWaveformView waveform;
     private ProgressBar loading;
     private MusicPager pages;
     private View tabIndicator;
@@ -73,11 +101,12 @@ public class MediaViewerActivity extends Activity {
 
     @Override public void onCreate(Bundle state){
         super.onCreate(state);
-        try{if(new org.json.JSONObject(getSharedPreferences("yr_preferences",MODE_PRIVATE).getString("settings","{}")).optBoolean("dark",false)){
+        dark = ViewerUi.isDark(this);
+        if (dark) {
             canvas=0xff292929;surface=0xff333333;ink=0xffeef3f8;muted=0xffa6b2bc;line=0xff494949;tint=0xff24454d;
-        }}catch(org.json.JSONException ignored){}
+        }
         getWindow().setStatusBarColor(canvas);getWindow().setNavigationBarColor(canvas);
-        getWindow().getDecorView().setSystemUiVisibility(canvas==0xff292929?0:View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
+        getWindow().getDecorView().setSystemUiVisibility(dark?0:View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
         root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setBackgroundColor(canvas);
         root.setOnApplyWindowInsetsListener((v,insets)->{Insets bars=insets.getInsets(WindowInsets.Type.systemBars());v.setPadding(bars.left,bars.top,bars.right,bars.bottom);return insets;});
         LinearLayout toolbar=row();toolbar.setPadding(dp(4),0,dp(4),0);
@@ -89,7 +118,7 @@ public class MediaViewerActivity extends Activity {
         pages=new MusicPager();root.addView(pages,new LinearLayout.LayoutParams(-1,0,1));
         ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setClipToPadding(false);scroll.setVerticalScrollBarEnabled(false);
         playing=new LinearLayout(this);playing.setOrientation(LinearLayout.VERTICAL);playing.setGravity(Gravity.CENTER);playing.setPadding(dp(24),dp(12),dp(24),dp(12));scroll.addView(playing);
-        artFrame=new FrameLayout(this);artFrame.setBackground(shape(tint,22,false));artFrame.setClipToOutline(true);artFrame.setElevation(dp(2));
+        artFrame=new FrameLayout(this);artFrame.setBackground(shape(tint,22,false));artFrame.setClipToOutline(true);artFrame.setElevation(dark ? 0 : dp(2));
         GradientDrawable cover=new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{tint,canvas});cover.setCornerRadius(dp(22));artFrame.setBackground(cover);
         placeholder=new ImageView(this);placeholder.setImageResource(R.drawable.ic_music_music);placeholder.setColorFilter(CYAN);placeholder.setScaleType(ImageView.ScaleType.FIT_CENTER);placeholder.setPadding(dp(66),dp(66),dp(66),dp(66));artFrame.addView(placeholder,new FrameLayout.LayoutParams(-1,-1));
         artwork=new ImageView(this);artwork.setScaleType(ImageView.ScaleType.CENTER_CROP);artwork.setVisibility(View.GONE);artFrame.addView(artwork,new FrameLayout.LayoutParams(-1,-1));
@@ -98,20 +127,27 @@ public class MediaViewerActivity extends Activity {
         artist=text("Unknown artist",13,muted);artist.setGravity(Gravity.CENTER);artist.setMaxLines(1);artist.setEllipsize(TextUtils.TruncateAt.END);playing.addView(artist,new LinearLayout.LayoutParams(-1,dp(20)));
         status=text("",12,muted);status.setGravity(Gravity.CENTER);status.setMaxLines(2);status.setVisibility(View.GONE);playing.addView(status,new LinearLayout.LayoutParams(-1,-2));space(playing,16);
         FrameLayout progress=new FrameLayout(this);seek=new SeekBar(this);seek.setProgressTintList(ColorStateList.valueOf(CYAN));seek.setThumbTintList(ColorStateList.valueOf(CYAN));seek.setProgressBackgroundTintList(ColorStateList.valueOf(line));progress.addView(seek,new FrameLayout.LayoutParams(-1,dp(32)));
+        waveform = new AudioWaveformView(this, CYAN, muted);
+        waveform.setPadding(seek.getPaddingLeft(), 0, seek.getPaddingRight(), 0);
+        playing.addView(waveform, new LinearLayout.LayoutParams(-1, dp(34)));
         loading=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);loading.setIndeterminate(true);loading.setIndeterminateTintList(ColorStateList.valueOf(CYAN));FrameLayout.LayoutParams loadParams=new FrameLayout.LayoutParams(-1,dp(2),Gravity.CENTER);loadParams.setMargins(dp(16),0,dp(16),0);progress.addView(loading,loadParams);playing.addView(progress,new LinearLayout.LayoutParams(-1,dp(32)));
         LinearLayout times=row();times.setPadding(dp(12),0,dp(12),0);elapsed=text("0:00",11,muted);duration=text("0:00",11,muted);duration.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);times.addView(elapsed,new LinearLayout.LayoutParams(0,dp(20),1));times.addView(duration,new LinearLayout.LayoutParams(0,dp(20),1));playing.addView(times);space(playing,12);
         seek.setOnTouchListener((v,event)->{if(event.getActionMasked()==MotionEvent.ACTION_DOWN)v.getParent().requestDisallowInterceptTouchEvent(true);return false;});
         seek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
             public void onStartTrackingTouch(SeekBar bar){seeking=true;}
-            public void onProgressChanged(SeekBar bar,int value,boolean user){if(user)elapsed.setText(time(value));}
+            public void onProgressChanged(SeekBar bar,int value,boolean user){
+                if (!user) return;
+                elapsed.setText(time(value));
+                if (audio != null) waveform.update(audio.current(), bar.getMax(), value, false);
+            }
             public void onStopTrackingTouch(SeekBar bar){seeking=false;if(audio!=null)audio.seek(bar.getProgress());}
         });
         LinearLayout controls=row();controls.setGravity(Gravity.CENTER);
         shuffle=icon(R.drawable.ic_music_shuffle,"Shuffle off",()->{if(audio!=null){audio.shuffle=!audio.shuffle;update();}});controls.addView(shuffle,new LinearLayout.LayoutParams(0,dp(48),1));
         controls.addView(icon(R.drawable.ic_music_previous,"Previous",()->{if(audio!=null)audio.next(-1);}),new LinearLayout.LayoutParams(0,dp(48),1));
-        play=icon(R.drawable.ic_music_play,"Play",()->{if(audio!=null)audio.toggle();update();});play.setColorFilter(Color.WHITE);play.setPadding(dp(15),dp(15),dp(15),dp(15));play.setBackground(shape(CYAN,28,false));play.setElevation(dp(2));controls.addView(play,new LinearLayout.LayoutParams(dp(56),dp(56)));
+        play=icon(R.drawable.ic_music_play,"Play",()->{if(audio!=null)audio.toggle();update();});play.setColorFilter(Color.WHITE);play.setPadding(dp(15),dp(15),dp(15),dp(15));play.setBackground(shape(CYAN,28,false));play.setElevation(dark ? 0 : dp(2));controls.addView(play,new LinearLayout.LayoutParams(dp(56),dp(56)));
         controls.addView(icon(R.drawable.ic_music_next,"Next",()->{if(audio!=null)audio.next(1);}),new LinearLayout.LayoutParams(0,dp(48),1));
-        repeat=icon(R.drawable.ic_music_repeat,"Repeat off",()->{if(audio!=null){audio.repeat=(audio.repeat+1)%3;update();}});controls.addView(repeat,new LinearLayout.LayoutParams(0,dp(48),1));controls.setPadding(dp(8),dp(8),dp(8),dp(8));controls.setBackground(shape(surface,36,true));controls.setElevation(dp(4));
+        repeat=icon(R.drawable.ic_music_repeat,"Repeat off",()->{if(audio!=null){audio.repeat=(audio.repeat+1)%3;update();}});controls.addView(repeat,new LinearLayout.LayoutParams(0,dp(48),1));controls.setPadding(dp(8),dp(8),dp(8),dp(8));controls.setBackground(shape(surface,36,true));controls.setElevation(dark ? 0 : dp(4));
         LinearLayout.LayoutParams controlsParams=new LinearLayout.LayoutParams(-1,dp(72));controlsParams.setMargins(dp(16),dp(8),dp(16),dp(20));root.addView(controls,controlsParams);pages.addPage(scroll);
 
         queue=new ListView(this);queue.setPadding(dp(12),dp(12),dp(12),dp(12));queue.setClipToPadding(false);queue.setDivider(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));queue.setDividerHeight(dp(6));queueAdapter=new QueueAdapter();queue.setAdapter(queueAdapter);queue.setOnItemClickListener((parent,view,position,id)->{if(audio!=null){audio.select(position);showQueue(false);}});pages.addPage(queue);
@@ -131,6 +167,7 @@ public class MediaViewerActivity extends Activity {
         fraction=Math.max(0,Math.min(1,fraction));
         tabIndicator.setTranslationX(tabIndicator.getLayoutParams().width*fraction);
         queueVisible=fraction>=.5f;header.setText(queueVisible?"Playlist":"Now playing");
+        waveform.setActive(resumed && !queueVisible);
         playingTab.setTextColor(queueVisible?muted:CYAN);playlistTab.setTextColor(queueVisible?CYAN:muted);
     }
     /** Finger-linked horizontal pages; vertical scrolling remains with each page. */
@@ -161,7 +198,10 @@ public class MediaViewerActivity extends Activity {
     private void update(){
         if(play==null)return;boolean ready=audio!=null&&audio.prepared,active=audio!=null&&audio.playing();
         play.setImageResource(active?R.drawable.ic_music_pause:R.drawable.ic_music_play);play.setColorFilter(Color.WHITE);play.setContentDescription(active?"Pause":"Play");seek.setEnabled(ready);loading.setVisibility(audio==null||audio.loading?View.VISIBLE:View.GONE);seek.setVisibility(audio==null||audio.loading?View.INVISIBLE:View.VISIBLE);
-        int length=ready?audio.duration():0;seek.setMax(Math.max(1,length));duration.setText(time(length));if(!seeking){int position=ready?audio.position():0;seek.setProgress(position);elapsed.setText(time(position));}
+        int length=ready?audio.duration():0;seek.setMax(Math.max(1,length));duration.setText(time(length));
+        int position = seeking ? seek.getProgress() : ready ? audio.position() : 0;
+        if (!seeking) { seek.setProgress(position); elapsed.setText(time(position)); }
+        waveform.update(audio == null ? null : audio.current(), length, position, active && !seeking);
         if(audio==null)return;title.setText(audio.title());artist.setText(audio.artist);status.setText(audio.error==null?"":audio.error);status.setVisibility(audio.error==null?View.GONE:View.VISIBLE);status.setTextColor(0xffd64a4a);
         artwork.setVisibility(audio.artwork==null?View.GONE:View.VISIBLE);placeholder.setVisibility(audio.artwork==null?View.VISIBLE:View.GONE);if(displayedArtwork!=audio.artwork){displayedArtwork=audio.artwork;artwork.setImageBitmap(displayedArtwork);}
         shuffle.setColorFilter(audio.shuffle?CYAN:muted);shuffle.setBackground(shape(audio.shuffle?tint:Color.TRANSPARENT,24,false));shuffle.setContentDescription(audio.shuffle?"Shuffle on":"Shuffle off");
@@ -191,7 +231,7 @@ public class MediaViewerActivity extends Activity {
         FrameLayout top=new FrameLayout(this);TextView label=text(heading,16,ink);bold(label);label.setGravity(Gravity.CENTER);top.addView(label,new FrameLayout.LayoutParams(-1,dp(48)));FrameLayout.LayoutParams closeParams=new FrameLayout.LayoutParams(dp(48),dp(48),Gravity.RIGHT);top.addView(icon(R.drawable.ic_music_close,"Close",dialog::dismiss),closeParams);box.addView(top);divider(box);return box;
     }
     private void divider(LinearLayout box){View rule=new View(this);rule.setBackgroundColor(line);box.addView(rule,new LinearLayout.LayoutParams(-1,dp(1)));}
-    private void showDialog(Dialog dialog,LinearLayout box){dialog.setContentView(box);Window window=dialog.getWindow();if(window!=null){window.setBackgroundDrawableResource(android.R.color.transparent);window.setLayout(Math.min(getResources().getDisplayMetrics().widthPixels-dp(32),dp(400)),-2);}dialog.show();if(window!=null)window.setLayout(Math.min(getResources().getDisplayMetrics().widthPixels-dp(32),dp(400)),-2);}
+    private void showDialog(Dialog dialog,LinearLayout box){dialog.setContentView(box);Window window=dialog.getWindow();if(window!=null){window.setBackgroundDrawableResource(android.R.color.transparent);window.setLayout(Math.min(getResources().getDisplayMetrics().widthPixels-dp(32),dp(400)),-2);}ViewerUi.showDialog(dialog, dark);if(window!=null)window.setLayout(Math.min(getResources().getDisplayMetrics().widthPixels-dp(32),dp(400)),-2);}
     private void menu(){
         Dialog dialog=new Dialog(this);LinearLayout box=dialogBody(dialog,"Music");String[] names={"Playlist","Save playlist","Open with","Stop"};int[] icons={R.drawable.ic_music_queue,R.drawable.ic_music_save,R.drawable.ic_music_open,R.drawable.ic_music_stop};
         for(int i=0;i<names.length;i++){final int choice=i;LinearLayout item=row();item.setPadding(dp(12),0,dp(18),0);ImageButton itemIcon=icon(icons[i],names[i],()->{});itemIcon.setClickable(false);itemIcon.setFocusable(false);item.addView(itemIcon);item.addView(text(names[i],14,ink));item.setOnClickListener(v->{dialog.dismiss();if(choice==0)showQueue(true);else if(choice==1)savePlaylist();else if(choice==2)external();else{stopService(new Intent(this,AudioPlaybackService.class));finish();}});box.addView(item,new LinearLayout.LayoutParams(-1,dp(48)));if(i<names.length-1)divider(box);}showDialog(dialog,box);
@@ -215,7 +255,24 @@ public class MediaViewerActivity extends Activity {
         audio=null;
         super.onStop();
     }
-    @Override protected void onResume(){super.onResume();handler.removeCallbacks(ticker);handler.post(ticker);}
-    @Override protected void onPause(){handler.removeCallbacks(ticker);super.onPause();}
-    @Override protected void onDestroy(){handler.removeCallbacks(ticker);if(audio!=null)audio.listener=null;if(bound)unbindService(connection);super.onDestroy();}
+    @Override protected void onResume(){
+        super.onResume();
+        resumed = true;
+        waveform.setActive(!queueVisible);
+        handler.removeCallbacks(ticker);
+        handler.post(ticker);
+    }
+    @Override protected void onPause(){
+        resumed = false;
+        waveform.setActive(false);
+        handler.removeCallbacks(ticker);
+        super.onPause();
+    }
+    @Override protected void onDestroy(){
+        handler.removeCallbacks(ticker);
+        waveform.dispose();
+        if(audio!=null)audio.listener=null;
+        if(bound)unbindService(connection);
+        super.onDestroy();
+    }
 }
