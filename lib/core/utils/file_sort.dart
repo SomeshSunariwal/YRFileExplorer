@@ -16,6 +16,7 @@ List<Json> sortedFileEntries(
   List<Json> entries, {
   required String sort,
   required bool descending,
+  bool stripHiddenPrefix = true,
 }) {
   // Normalize each key once, rather than allocating lowercase strings on
   // every comparison (O(n log n) comparisons for a large directory).
@@ -26,8 +27,13 @@ List<Json> sortedFileEntries(
       'Files' => entry['files'] as num? ?? 0,
       'Folders' => entry['folders'] as num? ?? 0,
       'Modified' => entry['modified'] as num? ?? 0,
+      'Installed' => entry['installed'] as num? ?? 0,
       'Type' => entry['category'].toString(),
-      _ => displayFileName(entry['name'].toString()).toLowerCase(),
+      _ =>
+        (stripHiddenPrefix
+                ? displayFileName(entry['name'].toString())
+                : entry['name'].toString())
+            .toLowerCase(),
     };
   }
   final rows = List<Json>.of(entries);

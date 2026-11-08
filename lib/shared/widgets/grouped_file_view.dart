@@ -4,7 +4,8 @@ import 'package:yr_file_explorer/core/theme/file_categories.dart';
 import 'package:yr_file_explorer/core/utils/file_format.dart';
 
 /// Adds lazy group headings while preserving the original tiles, selection,
-/// scroll controller, padding and grid geometry. None preserves the flat view.
+/// scroll controller, padding and grid geometry. Pass a new entries list when
+/// a grouping field changes. None preserves the flat view.
 class GroupedFileView extends StatefulWidget {
   final List<Json> entries;
   final String groupBy;
@@ -23,7 +24,10 @@ class GroupedFileView extends StatefulWidget {
 }
 
 class _GroupedFileViewState extends State<GroupedFileView> {
-  final collapsed = <String>{};
+  static final _number = RegExp(r'^[0-9]$');
+  static final _symbol = RegExp(r'^[^\w\u0080-\uffff]$');
+  final collapsed = <(bool, String)>{};
+  List<_EntryGroup>? _groups;
   List<Json> get entries => widget.entries;
   String get groupBy => widget.groupBy;
   bool get descending => widget.descending;
@@ -33,39 +37,47 @@ class _GroupedFileViewState extends State<GroupedFileView> {
   void didUpdateWidget(covariant GroupedFileView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.groupBy != groupBy) collapsed.clear();
+    if (!identical(oldWidget.entries, entries) ||
+        oldWidget.groupBy != groupBy ||
+        oldWidget.descending != descending) {
+      _groups = null;
+    }
+  }
+
+  List<_EntryGroup> _groupEntries() {
+    final groups = <(bool, String), _EntryGroup>{};
+    for (var i = 0; i < entries.length; i++) {
+      final entry = entries[i];
+      final folder = entry['directory'] == true;
+      final bucket = _bucket(entry);
+      final group = groups.putIfAbsent((
+        folder,
+        bucket.$1,
+      ), () => _EntryGroup(bucket.$1, bucket.$2, folder));
+      group.indices.add(i);
+    }
+    return groups.values.toList()..sort((a, b) {
+      if (a.folder != b.folder) return a.folder ? -1 : 1;
+      final order = a.order.compareTo(b.order);
+      return descending ? -order : order;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     if (groupBy == 'None' || entries.isEmpty) return child;
-    final groups = <String, _EntryGroup>{};
-    for (var i = 0; i < entries.length; i++) {
-      final entry = entries[i];
-      final folder = entry['directory'] == true;
-      final bucket = _bucket(entry);
-      final id = '$folder|${bucket.$1}';
-      final group = groups.putIfAbsent(
-        id,
-        () => _EntryGroup(bucket.$1, bucket.$2, folder),
-      );
-      group.indices.add(i);
-    }
-    final ordered = groups.values.toList()
-      ..sort((a, b) {
-        if (a.folder != b.folder) return a.folder ? -1 : 1;
-        final order = a.order.compareTo(b.order);
-        return descending ? -order : order;
-      });
+    final ordered = _groups ??= _groupEntries();
     var visibleCount = 0;
     for (final group in ordered) {
       group.offset = visibleCount;
-      if (!collapsed.contains('${group.folder}|${group.label}')) {
+      if (!collapsed.contains(group.key)) {
         visibleCount += group.indices.length;
       }
     }
-    final source = child is GridView
-        ? (child as GridView).childrenDelegate
-        : (child as ListView).childrenDelegate;
+    final grid = child is GridView ? child as GridView : null;
+    final source =
+        (grid?.childrenDelegate ?? (child as ListView).childrenDelegate)
+            as SliverChildBuilderDelegate;
     return CustomScrollView(
       key: child.key,
       controller: child.controller,
@@ -83,15 +95,13 @@ class _GroupedFileViewState extends State<GroupedFileView> {
             slivers: [
               for (final group in ordered) ...[
                 SliverToBoxAdapter(
-                  key: ValueKey('group-${group.folder}-${group.label}'),
+                  key: ValueKey(group.key),
                   child: Semantics(
                     header: true,
-                    expanded: !collapsed.contains(
-                      '${group.folder}|${group.label}',
-                    ),
+                    expanded: !collapsed.contains(group.key),
                     child: InkWell(
                       onTap: () => setState(() {
-                        final key = '${group.folder}|${group.label}';
+                        final key = group.key;
                         if (!collapsed.add(key)) collapsed.remove(key);
                       }),
                       child: Padding(
@@ -102,9 +112,7 @@ class _GroupedFileViewState extends State<GroupedFileView> {
                         child: Row(
                           children: [
                             Icon(
-                              collapsed.contains(
-                                    '${group.folder}|${group.label}',
-                                  )
+                              collapsed.contains(group.key)
                                   ? Icons.chevron_right
                                   : Icons.expand_more,
                               size: 18,
@@ -148,38 +156,29 @@ class _GroupedFileViewState extends State<GroupedFileView> {
                     ),
                   ),
                 ),
-                if (!collapsed.contains('${group.folder}|${group.label}'))
-                  if (child is GridView)
-                    SliverGrid(
-                      gridDelegate: (child as GridView).gridDelegate,
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) =>
-                            (source as SliverChildBuilderDelegate).builder(
-                              context,
-                              group.indices[index],
-                            ),
-                        childCount: group.indices.length,
-                        semanticIndexOffset: group.offset,
-                      ),
-                    )
-                  else
-                    SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) =>
-                            (source as SliverChildBuilderDelegate).builder(
-                              context,
-                              group.indices[index],
-                            ),
-                        childCount: group.indices.length,
-                        semanticIndexOffset: group.offset,
-                      ),
-                    ),
+                if (!collapsed.contains(group.key))
+                  _groupSliver(group, source, grid),
               ],
             ],
           ),
         ),
       ],
     );
+  }
+
+  Widget _groupSliver(
+    _EntryGroup group,
+    SliverChildBuilderDelegate source,
+    GridView? grid,
+  ) {
+    final delegate = SliverChildBuilderDelegate(
+      (context, index) => source.builder(context, group.indices[index]),
+      childCount: group.indices.length,
+      semanticIndexOffset: group.offset,
+    );
+    return grid == null
+        ? SliverList(delegate: delegate)
+        : SliverGrid(gridDelegate: grid.gridDelegate, delegate: delegate);
   }
 
   (String, String) _bucket(Json entry) {
@@ -189,9 +188,9 @@ class _GroupedFileViewState extends State<GroupedFileView> {
         final initial = name.isEmpty
             ? '#'
             : String.fromCharCode(name.runes.first).toUpperCase();
-        final label = RegExp(r'^[0-9]$').hasMatch(initial)
+        final label = _number.hasMatch(initial)
             ? '0–9'
-            : RegExp(r'^[^\w\u0080-\uffff]$').hasMatch(initial)
+            : _symbol.hasMatch(initial)
             ? '#'
             : initial;
         return (label, label);
@@ -225,4 +224,5 @@ class _EntryGroup {
   final indices = <int>[];
   int offset = 0;
   _EntryGroup(this.label, this.order, this.folder);
+  (bool, String) get key => (folder, label);
 }

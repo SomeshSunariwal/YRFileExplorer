@@ -15,13 +15,14 @@ import 'package:yr_file_explorer/shared/dialogs/input_dialogs.dart';
 class ImageViewer extends StatefulWidget {
   final String path;
   final List<String>? images;
-  final bool recycle, canDelete;
+  final bool recycle, canDelete, privatePreview;
   const ImageViewer({
     super.key,
     required this.path,
     this.images,
     this.recycle = true,
     this.canDelete = true,
+    this.privatePreview = false,
   });
   @override
   State<ImageViewer> createState() => _ImageViewerState();
@@ -38,6 +39,7 @@ class _ImageViewerState extends State<ImageViewer> with WidgetsBindingObserver {
   Timer? slideshow;
   late int index;
   bool controls = true;
+  bool covered = false;
   String get path => images[index];
   @override
   void initState() {
@@ -60,6 +62,11 @@ class _ImageViewerState extends State<ImageViewer> with WidgetsBindingObserver {
     pages.removeListener(syncThumbnails);
     pages.dispose();
     thumbnailScroll.dispose();
+    if (widget.privatePreview) {
+      for (final image in images) {
+        unawaited(FileImage(File(image)).evict());
+      }
+    }
     super.dispose();
   }
 
@@ -94,7 +101,25 @@ class _ImageViewerState extends State<ImageViewer> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state != AppLifecycleState.resumed) stopSlideshow();
+    if (state != AppLifecycleState.resumed) {
+      stopSlideshow();
+      if (widget.privatePreview && !covered) setState(() => covered = true);
+    } else if (widget.privatePreview && covered) {
+      unawaited(revealPrivateImage());
+    }
+  }
+
+  Future<void> revealPrivateImage() async {
+    try {
+      final unlocked = await Native.call<bool>('privateStatus');
+      if (mounted &&
+          unlocked == true &&
+          WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
+        setState(() => covered = false);
+      }
+    } on PlatformException {
+      // Keep the preview covered if the vault session cannot be checked.
+    }
   }
 
   void stopSlideshow() {
@@ -210,11 +235,13 @@ class _ImageViewerState extends State<ImageViewer> with WidgetsBindingObserver {
         [
               if (widget.canDelete) ('Delete', Icons.delete_outline),
               ('Turn right', Icons.rotate_right),
-              ('Set background', Icons.wallpaper),
+              if (!widget.privatePreview) ('Set background', Icons.wallpaper),
               ('Slideshow', Icons.slideshow_outlined),
-              ('Share', Icons.share_outlined),
-              ('Open with', Icons.open_in_new),
-              ('Properties', Icons.info_outline),
+              if (!widget.privatePreview) ...[
+                ('Share', Icons.share_outlined),
+                ('Open with', Icons.open_in_new),
+                ('Properties', Icons.info_outline),
+              ],
             ]
             .map(
               (entry) => PopupMenuItem(
@@ -394,7 +421,8 @@ class _ImageViewerState extends State<ImageViewer> with WidgetsBindingObserver {
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
           control('Rotate', Icons.rotate_right, () => action('Turn right')),
-          control('Share', Icons.share_outlined, () => action('Share')),
+          if (!widget.privatePreview)
+            control('Share', Icons.share_outlined, () => action('Share')),
           control('Slideshow', Icons.slideshow_outlined, toggleSlideshow),
           if (widget.canDelete)
             control(
@@ -419,52 +447,54 @@ class _ImageViewerState extends State<ImageViewer> with WidgetsBindingObserver {
       systemNavigationBarContrastEnforced: false,
       systemStatusBarContrastEnforced: false,
     ),
-    child: Scaffold(
-      backgroundColor: Colors.black,
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () {
-              stopSlideshow();
-              setState(() => controls = !controls);
-            },
-            child: PageView.builder(
-              controller: pages,
-              physics: zoomed ? const NeverScrollableScrollPhysics() : null,
-              itemCount: images.length,
-              onPageChanged: (value) => setState(() {
-                index = value;
-                zoomed = false;
-              }),
-              itemBuilder: (_, i) => _ImageCanvas(
-                key: ValueKey(images[i]),
-                path: images[i],
-                active: i == index,
-                turns: rotations[images[i]] ?? 0,
-                onZoom: (value) {
-                  if (i == index && mounted && zoomed != value) {
-                    setState(() => zoomed = value);
-                  }
-                },
-              ),
+    child: covered ? const Scaffold(backgroundColor: Colors.black) : gallery(),
+  );
+
+  Widget gallery() => Scaffold(
+    backgroundColor: Colors.black,
+    body: Stack(
+      fit: StackFit.expand,
+      children: [
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () {
+            stopSlideshow();
+            setState(() => controls = !controls);
+          },
+          child: PageView.builder(
+            controller: pages,
+            physics: zoomed ? const NeverScrollableScrollPhysics() : null,
+            itemCount: images.length,
+            onPageChanged: (value) => setState(() {
+              index = value;
+              zoomed = false;
+            }),
+            itemBuilder: (_, i) => _ImageCanvas(
+              key: ValueKey(images[i]),
+              path: images[i],
+              active: i == index,
+              turns: rotations[images[i]] ?? 0,
+              onZoom: (value) {
+                if (i == index && mounted && zoomed != value) {
+                  setState(() => zoomed = value);
+                }
+              },
             ),
           ),
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: overlay(top: true, child: header()),
-          ),
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            child: overlay(top: false, child: footer()),
-          ),
-        ],
-      ),
+        ),
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: overlay(top: true, child: header()),
+        ),
+        Positioned(
+          bottom: 0,
+          left: 0,
+          right: 0,
+          child: overlay(top: false, child: footer()),
+        ),
+      ],
     ),
   );
 }

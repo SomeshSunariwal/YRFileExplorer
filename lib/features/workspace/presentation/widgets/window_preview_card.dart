@@ -8,7 +8,7 @@ class WindowPreviewCard extends StatelessWidget {
   final String label;
   final IconData icon;
   final Uint8List? preview;
-  final bool selected, isDefault, locked;
+  final bool selected, isDefault;
   final VoidCallback onSelect, onDefault;
   final VoidCallback? onClose;
   const WindowPreviewCard({
@@ -18,7 +18,6 @@ class WindowPreviewCard extends StatelessWidget {
     required this.preview,
     required this.selected,
     required this.isDefault,
-    required this.locked,
     required this.onSelect,
     required this.onDefault,
     this.onClose,
@@ -129,9 +128,9 @@ class WindowPreviewCard extends StatelessWidget {
                 top: 2,
                 right: 2,
                 child: _PreviewControl(
-                  tooltip: locked ? 'Window locked' : 'Close window',
-                  onPressed: locked ? null : onClose,
-                  icon: locked ? Icons.lock_outline : Icons.close_rounded,
+                  tooltip: 'Close window',
+                  onPressed: onClose,
+                  icon: Icons.close_rounded,
                   foreground: dark
                       ? const Color(0xffef5350)
                       : const Color(0xffd32f2f),

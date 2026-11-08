@@ -8,7 +8,10 @@ import android.widget.BaseAdapter;
 import android.widget.HorizontalScrollView;
 import android.widget.ListView;
 
-/** Gives the continuous page list a real scaled width and keeps the pinch point stable. */
+/**
+ * Gives the continuous page list a real scaled width and keeps the pinch point
+ * stable.
+ */
 final class PdfZoomView extends HorizontalScrollView {
     private static final float MAX_ZOOM = 4;
     final ListView document;
@@ -23,7 +26,8 @@ final class PdfZoomView extends HorizontalScrollView {
         super(context);
         this.onZoomSettled = onZoomSettled;
         document = new ListView(context) {
-            @Override protected void onMeasure(int width, int height) {
+            @Override
+            protected void onMeasure(int width, int height) {
                 super.onMeasure(MeasureSpec.makeMeasureSpec(contentWidth, MeasureSpec.EXACTLY), height);
             }
         };
@@ -31,7 +35,8 @@ final class PdfZoomView extends HorizontalScrollView {
         setHorizontalScrollBarEnabled(false);
         setOverScrollMode(OVER_SCROLL_NEVER);
         pinch = new ScaleGestureDetector(context, new ScaleGestureDetector.SimpleOnScaleGestureListener() {
-            @Override public boolean onScale(ScaleGestureDetector detector) {
+            @Override
+            public boolean onScale(ScaleGestureDetector detector) {
                 scaleAt(detector.getScaleFactor(), detector.getFocusX(), detector.getFocusY());
                 return true;
             }
@@ -48,12 +53,14 @@ final class PdfZoomView extends HorizontalScrollView {
         return pinching;
     }
 
-    @Override protected void onMeasure(int width, int height) {
+    @Override
+    protected void onMeasure(int width, int height) {
         contentWidth = Math.max(1, Math.round(MeasureSpec.getSize(width) * zoom));
         super.onMeasure(width, height);
     }
 
-    @Override protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
+    @Override
+    protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
         super.onLayout(changed, left, top, right, bottom);
         if (pendingScroll >= 0) {
             scrollTo(pendingScroll, 0);
@@ -61,7 +68,8 @@ final class PdfZoomView extends HorizontalScrollView {
         }
     }
 
-    @Override public boolean dispatchTouchEvent(MotionEvent event) {
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent event) {
         int action = event.getActionMasked();
         if (!pinching && event.getPointerCount() > 1) {
             // End the one-finger scroll cleanly when a second finger takes over.
@@ -73,7 +81,8 @@ final class PdfZoomView extends HorizontalScrollView {
             getParent().requestDisallowInterceptTouchEvent(true);
         }
         pinch.onTouchEvent(event);
-        if (!pinching) return super.dispatchTouchEvent(event);
+        if (!pinching)
+            return super.dispatchTouchEvent(event);
         if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
             pinching = false;
             getParent().requestDisallowInterceptTouchEvent(false);
@@ -83,15 +92,18 @@ final class PdfZoomView extends HorizontalScrollView {
     }
 
     private void scaleAt(float factor, float x, float y) {
-        if (getWidth() == 0 || document.getChildCount() == 0) return;
+        if (getWidth() == 0 || document.getChildCount() == 0)
+            return;
         float next = Math.max(1, Math.min(MAX_ZOOM, zoom * factor));
-        if (next == zoom) return;
+        if (next == zoom)
+            return;
 
         int first = document.getFirstVisiblePosition();
         int index = first;
         View anchor = document.getChildAt(0);
         for (int i = 1; i < document.getChildCount(); i++) {
-            if (anchor.getBottom() >= y) break;
+            if (anchor.getBottom() >= y)
+                break;
             anchor = document.getChildAt(i);
             index = first + i;
         }
@@ -104,7 +116,8 @@ final class PdfZoomView extends HorizontalScrollView {
         pendingScroll = Math.max(0, Math.round((getScrollX() + x - leftPadding) * ratio + leftPadding - x));
         zoom = next;
         requestLayout();
-        if (document.getAdapter() instanceof BaseAdapter adapter) adapter.notifyDataSetChanged();
+        if (document.getAdapter() instanceof BaseAdapter adapter)
+            adapter.notifyDataSetChanged();
         document.setSelectionFromTop(index, anchorTop - document.getPaddingTop());
     }
 }

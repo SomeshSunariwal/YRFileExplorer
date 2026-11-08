@@ -147,10 +147,10 @@ Future<void> showStorageLocations(
                             for (final volume in volumes) ...[
                               Divider(height: 1, indent: 57, color: line),
                               location(
-                                label: volume['removable'] == true
+                                label: volume['primary'] == false
                                     ? volume['name']
                                     : 'Device',
-                                icon: volume['removable'] == true
+                                icon: volume['primary'] == false
                                     ? Icons.sd_card_outlined
                                     : Icons.phone_android_outlined,
                                 detail:

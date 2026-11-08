@@ -12,7 +12,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
-/** Counts real files without following links and reports throttled batch progress. */
+/**
+ * Counts real files without following links and reports throttled batch
+ * progress.
+ */
 public final class FileOperationProgress {
     private final String id;
     private final Consumer<Map<String, Object>> sink;
@@ -27,16 +30,19 @@ public final class FileOperationProgress {
         current = paths.isEmpty() ? "" : paths.get(0);
         emit(true, true);
         for (String path : paths) {
-            final long[] files = {0};
+            final long[] files = { 0 };
             current = path;
             Files.walkFileTree(Paths.get(path), new SimpleFileVisitor<Path>() {
-                @Override public FileVisitResult visitFile(Path p, BasicFileAttributes attributes) {
+                @Override
+                public FileVisitResult visitFile(Path p, BasicFileAttributes attributes) {
                     files[0]++;
                     current = p.toString();
                     emit(true, false);
                     return FileVisitResult.CONTINUE;
                 }
-                @Override public FileVisitResult visitFileFailed(Path p, IOException error) {
+
+                @Override
+                public FileVisitResult visitFileFailed(Path p, IOException error) {
                     known = false;
                     return FileVisitResult.CONTINUE;
                 }
@@ -46,11 +52,13 @@ public final class FileOperationProgress {
         }
         emit(false, true);
     }
+
     public void start(Path path) {
         current = path.toString();
         rootCompleted = 0;
         emit(false, true);
     }
+
     public void fileDone(Path path) {
         current = path.toString();
         completed++;
@@ -58,15 +66,18 @@ public final class FileOperationProgress {
         total = Math.max(total, completed);
         emit(false, false);
     }
+
     public void finish(Path path) {
         completed += Math.max(0, counts.getOrDefault(path.toString(), 0L) - rootCompleted);
         total = Math.max(total, completed);
         current = path.toString();
         emit(false, true);
     }
+
     private void emit(boolean counting, boolean force) {
         long now = System.nanoTime();
-        if (!force && now - lastEmission < 100_000_000L) return;
+        if (!force && now - lastEmission < 100_000_000L)
+            return;
         lastEmission = now;
         Map<String, Object> event = new HashMap<>();
         event.put("type", "fileOperation");
@@ -74,7 +85,8 @@ public final class FileOperationProgress {
         event.put("current", current);
         event.put("completed", completed);
         event.put("counting", counting);
-        if (!counting && known) event.put("total", total);
+        if (!counting && known)
+            event.put("total", total);
         sink.accept(event);
     }
 }

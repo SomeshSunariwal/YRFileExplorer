@@ -58,9 +58,6 @@ Future<void> showExplorerWindows(BuildContext context) async {
                       preview: session.previews[id],
                       selected: session.activeId == id,
                       isDefault: session.isDefaultWindow(id),
-                      locked:
-                          id != null &&
-                          session.windows.firstWhere((w) => w.id == id).locked,
                       onDefault: () => session.setDefaultWindow(id),
                       onSelect: () {
                         session.activate(id);

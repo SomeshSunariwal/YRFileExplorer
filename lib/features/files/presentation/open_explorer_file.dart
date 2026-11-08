@@ -27,6 +27,7 @@ Future<bool> openExplorerFile(
   Iterable<Json> nearby = const [],
   bool recycle = true,
   bool readOnly = false,
+  bool privatePreview = false,
   Future<void> Function(String path)? openArchive,
 }) async {
   final path = entry['path'] as String;
@@ -38,7 +39,8 @@ Future<bool> openExplorerFile(
         builder: (_) => ImageViewer(
           path: path,
           recycle: recycle,
-          canDelete: !readOnly,
+          canDelete: !readOnly && !privatePreview,
+          privatePreview: privatePreview,
           images: nearby
               .where(_isGalleryImage)
               .map((item) => item['path'] as String)
@@ -46,7 +48,16 @@ Future<bool> openExplorerFile(
         ),
       ),
     );
-    return !readOnly;
+    return !readOnly && !privatePreview;
+  }
+  if (privatePreview) {
+    if (entry['category'] == 'Music' ||
+        entry['category'] == 'Videos' ||
+        path.toLowerCase().endsWith('.pdf')) {
+      await Native.call('open', {'path': path});
+      return false;
+    }
+    throw StateError('Move Out to open this file with another app.');
   }
   if (path.startsWith('/') && _editableText.hasMatch(path)) {
     await Navigator.of(context).push(

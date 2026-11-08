@@ -14,6 +14,7 @@ import 'package:yr_file_explorer/core/platform/native_bridge.dart';
 import 'package:yr_file_explorer/core/settings/app_settings.dart';
 import 'package:yr_file_explorer/core/theme/file_categories.dart';
 import 'package:yr_file_explorer/core/utils/file_format.dart';
+import 'package:yr_file_explorer/core/utils/file_sort.dart';
 import 'package:yr_file_explorer/features/workspace/application/workspace_session.dart';
 import 'package:yr_file_explorer/features/workspace/presentation/dialogs/windows_dialog.dart';
 import 'package:yr_file_explorer/features/workspace/presentation/widgets/explorer_action.dart';
@@ -32,6 +33,9 @@ class AppsPage extends StatefulWidget {
 
 class _AppsPageState extends State<AppsPage> with WidgetsBindingObserver {
   List<Json> apps = [];
+  List<Json> _visibleRows = [];
+  (List<Json>, String, String, String, bool)? _rowsKey;
+  int _loadVersion = 0;
   final selected = <String>{};
   final search = TextEditingController();
   String filter = 'User Apps', sort = 'Name', viewMode = 'Medium Icon';
@@ -62,6 +66,7 @@ class _AppsPageState extends State<AppsPage> with WidgetsBindingObserver {
 
   String key(Json app) => app['path'];
   Future<void> load({bool background = false}) async {
+    final version = ++_loadVersion;
     setState(() {
       if (!background) loading = true;
       error = null;
@@ -78,7 +83,7 @@ class _AppsPageState extends State<AppsPage> with WidgetsBindingObserver {
               : ExplorerWorkspaceSession.instance.root,
         },
       );
-      if (mounted) {
+      if (mounted && version == _loadVersion) {
         setState(() {
           apps = rows;
           selected.retainAll(rows.map(key).toSet());
@@ -86,7 +91,7 @@ class _AppsPageState extends State<AppsPage> with WidgetsBindingObserver {
         });
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted && version == _loadVersion) {
         setState(() {
           error = e.toString();
           loading = false;
@@ -97,6 +102,8 @@ class _AppsPageState extends State<AppsPage> with WidgetsBindingObserver {
 
   List<Json> get rows {
     final query = search.text.toLowerCase();
+    final key = (apps, query, filter, sort, descending);
+    if (key == _rowsKey) return _visibleRows;
     final result = apps.where((a) {
       if (filter == 'User Apps' && a['system'] == true) return false;
       if (filter == 'System Apps' && a['system'] != true) return false;
@@ -104,21 +111,16 @@ class _AppsPageState extends State<AppsPage> with WidgetsBindingObserver {
       if (filter == 'Installed in sdcard' && a['external'] != true) {
         return false;
       }
-      return '${a['name']} ${a['package']}'.toLowerCase().contains(query);
+      return query.isEmpty ||
+          '${a['name']} ${a['package']}'.toLowerCase().contains(query);
     }).toList();
-    result.sort((a, b) {
-      final v = switch (sort) {
-        'Size' => (a['size'] as num).compareTo(b['size'] as num),
-        'Installed' => (a['installed'] as num? ?? 0).compareTo(
-          b['installed'] as num? ?? 0,
-        ),
-        _ => a['name'].toString().toLowerCase().compareTo(
-          b['name'].toString().toLowerCase(),
-        ),
-      };
-      return descending ? -v : v;
-    });
-    return result;
+    _rowsKey = key;
+    return _visibleRows = sortedFileEntries(
+      result,
+      sort: sort,
+      descending: descending,
+      stripHiddenPrefix: false,
+    );
   }
 
   void toggle(Json a) => setState(() {
@@ -315,7 +317,7 @@ class _AppsPageState extends State<AppsPage> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     final visible = rows;
-    final picks = apps.where((a) => selected.contains(key(a))).toList();
+    List<Json> picks() => apps.where((a) => selected.contains(key(a))).toList();
     Widget action(IconData icon, String label, VoidCallback tap) =>
         ExplorerAction(icon: icon, label: label, onTap: busy ? () {} : tap);
     return ExplorerPane(
@@ -378,16 +380,20 @@ class _AppsPageState extends State<AppsPage> with WidgetsBindingObserver {
               action(
                 Icons.delete_outline,
                 'Uninstall',
-                () => run('Uninstall', picks),
+                () => run('Uninstall', picks()),
               ),
               action(
                 Icons.backup_outlined,
                 'Backup',
-                () => run('Backup', picks),
+                () => run('Backup', picks()),
               ),
-              action(Icons.share_outlined, 'Share', () => run('Share', picks)),
-              action(Icons.send_outlined, 'Send', () => run('Send', picks)),
-              action(Icons.more_horiz, 'More', () => more(picks)),
+              action(
+                Icons.share_outlined,
+                'Share',
+                () => run('Share', picks()),
+              ),
+              action(Icons.send_outlined, 'Send', () => run('Send', picks())),
+              action(Icons.more_horiz, 'More', () => more(picks())),
             ],
       body: SelectionDragArea(
         selected: selected,

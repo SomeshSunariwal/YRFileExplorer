@@ -23,7 +23,9 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
 
-/** Bounded on-device transfer log; never contains pairing codes or session keys. */
+/**
+ * Bounded on-device transfer log; never contains pairing codes or session keys.
+ */
 final class SharingHistory {
     private static final int MAX_ENTRIES = 500;
     private static final int MAX_BYTES = 2_000_000;
@@ -48,7 +50,8 @@ final class SharingHistory {
             byte[] buffer = new byte[8192];
             int count;
             while ((count = in.read(buffer)) != -1) {
-                if (data.size() + count > MAX_BYTES) return;
+                if (data.size() + count > MAX_BYTES)
+                    return;
                 data.write(buffer, 0, count);
             }
             JSONArray saved = new JSONArray(data.toString(StandardCharsets.UTF_8.name()));
@@ -60,10 +63,12 @@ final class SharingHistory {
                     String key = keys.next();
                     row.put(key, entry.get(key));
                 }
-                if (isActive(row)) row.put("status", "Interrupted");
+                if (isActive(row))
+                    row.put("status", "Interrupted");
                 rows.put(entry.getString("id"), row);
             }
-        } catch (IOException | JSONException ignored) { /* History may be absent or unreadable. */ }
+        } catch (IOException | JSONException ignored) {
+            /* History may be absent or unreadable. */ }
     }
 
     synchronized void enqueue(List<OutgoingFile> files, String peer) {
@@ -87,17 +92,19 @@ final class SharingHistory {
                 modified = true;
             }
         }
-        if (modified) commit(true);
+        if (modified)
+            commit(true);
     }
 
     synchronized void updateReceived(String id, String name, String peer, long bytes,
-                                     long size, String status, String path) {
+            long size, String status, String path) {
         put(id, name, peer, "Received", bytes, size, status, path);
         commit(!"Receiving".equals(status));
     }
 
     synchronized Map<String, Object> since(long knownRevision) {
-        if (knownRevision == revision) return null;
+        if (knownRevision == revision)
+            return null;
         List<Map<String, Object>> result = new ArrayList<>(rows.size());
         for (Map<String, Object> row : rows.values()) {
             result.add(new HashMap<>(row));
@@ -107,7 +114,8 @@ final class SharingHistory {
     }
 
     synchronized void clear() {
-        if (rows.values().removeIf(row -> !isActive(row))) commit(true);
+        if (rows.values().removeIf(row -> !isActive(row)))
+            commit(true);
     }
 
     private static boolean isActive(Map<String, Object> row) {
@@ -119,7 +127,7 @@ final class SharingHistory {
     }
 
     private void put(String id, String name, String peer, String direction, long bytes,
-                     long size, String status, String path) {
+            long size, String status, String path) {
         Map<String, Object> row = rows.computeIfAbsent(id, key -> {
             Map<String, Object> entry = new HashMap<>();
             entry.put("id", key);
@@ -132,13 +140,16 @@ final class SharingHistory {
         row.put("bytes", bytes);
         row.put("size", size);
         row.put("status", status);
-        if (path != null) row.put("path", path);
-        if (rows.size() > MAX_ENTRIES) rows.remove(rows.keySet().iterator().next());
+        if (path != null)
+            row.put("path", path);
+        if (rows.size() > MAX_ENTRIES)
+            rows.remove(rows.keySet().iterator().next());
     }
 
     private void commit(boolean persistNow) {
         revision = REVISIONS.incrementAndGet();
-        if (persistNow || SystemClock.elapsedRealtime() - lastWrite >= 1000) save();
+        if (persistNow || SystemClock.elapsedRealtime() - lastWrite >= 1000)
+            save();
     }
 
     private void save() {
@@ -149,7 +160,8 @@ final class SharingHistory {
             file.finishWrite(out);
             lastWrite = SystemClock.elapsedRealtime();
         } catch (Exception e) {
-            if (out != null) file.failWrite(out);
+            if (out != null)
+                file.failWrite(out);
         }
     }
 }

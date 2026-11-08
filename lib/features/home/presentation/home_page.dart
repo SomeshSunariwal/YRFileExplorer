@@ -42,8 +42,7 @@ class _ExplorerHomeState extends State<ExplorerHome>
   String? countPath;
   bool loading = true;
   String? error;
-  String get primary =>
-      volumes.isEmpty ? '/storage/emulated/0' : volumes.first['path'];
+  String get primary => ExplorerWorkspaceSession.instance.root;
   @override
   void initState() {
     super.initState();
@@ -73,9 +72,6 @@ class _ExplorerHomeState extends State<ExplorerHome>
       if (!allowed) return;
       final storage = await Native.rows('volumes');
       ExplorerWorkspaceSession.instance.volumes = storage;
-      if (storage.isNotEmpty) {
-        ExplorerWorkspaceSession.instance.root = storage.first['path'];
-      }
       if (mounted) {
         setState(() {
           volumes = storage;
@@ -561,7 +557,7 @@ class _ExplorerHomeState extends State<ExplorerHome>
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(
-                v['removable'] == true
+                v['primary'] == false
                     ? Icons.sd_storage_outlined
                     : Icons.phone_android_outlined,
                 color: primaryBlue,
@@ -574,7 +570,7 @@ class _ExplorerHomeState extends State<ExplorerHome>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    v['removable'] == true ? v['name'] : 'Device',
+                    v['primary'] == false ? v['name'] : 'Device',
                     style: const TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
