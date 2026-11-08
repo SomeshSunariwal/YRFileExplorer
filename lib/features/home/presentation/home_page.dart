@@ -284,7 +284,12 @@ class _ExplorerHomeState extends State<ExplorerHome>
                           title: AnalysisKind.duplicates.title,
                         ),
                       ),
-                    ]),
+                      _bookmark(
+                        'Private Space',
+                        Icons.lock_outline,
+                        () => sessionTool('private'),
+                      ),
+                    ], columns: 2),
                     const SizedBox(height: 10),
                     _shortcutSection('Network', [
                       _bookmark(
@@ -293,16 +298,21 @@ class _ExplorerHomeState extends State<ExplorerHome>
                         () => sessionTool('network'),
                       ),
                       _bookmark(
-                        'Bluetooth',
-                        Icons.bluetooth,
-                        () => sessionTool('bluetooth'),
+                        'Sharing',
+                        Icons.wifi_tethering_rounded,
+                        () => sessionTool('sharing'),
                       ),
                       _bookmark(
                         'Download Manager',
                         Icons.downloading_outlined,
                         () => sessionTool('downloads'),
                       ),
-                    ]),
+                      _bookmark(
+                        'Bluetooth',
+                        Icons.bluetooth,
+                        () => sessionTool('bluetooth'),
+                      ),
+                    ], columns: 2),
                     AnimatedBuilder(
                       animation: widget.settings,
                       builder: (context, _) {
@@ -349,13 +359,15 @@ class _ExplorerHomeState extends State<ExplorerHome>
             : const Color(0xffe3eaf2),
       ),
       color: Theme.of(context).colorScheme.surface,
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withValues(alpha: .035),
-          blurRadius: 16,
-          offset: const Offset(0, 5),
-        ),
-      ],
+      boxShadow: Theme.of(context).brightness == Brightness.dark
+          ? null
+          : [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: .035),
+                blurRadius: 16,
+                offset: const Offset(0, 5),
+              ),
+            ],
     ),
     child: child,
   );
@@ -364,7 +376,7 @@ class _ExplorerHomeState extends State<ExplorerHome>
     List<Widget> entries, {
     bool initiallyExpanded = true,
     int columns = 3,
-    double tileHeight = 56,
+    double? tileHeight,
   }) => _panel(
     ExpansionTile(
       key: PageStorageKey('home-section-$title'),
@@ -384,7 +396,12 @@ class _ExplorerHomeState extends State<ExplorerHome>
           physics: const NeverScrollableScrollPhysics(),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: columns,
-            mainAxisExtent: tileHeight,
+            mainAxisExtent:
+                tileHeight ??
+                (MediaQuery.textScalerOf(context).scale(12) * 2.5 + 8).clamp(
+                  48.0,
+                  double.infinity,
+                ),
           ),
           itemCount: entries.length,
           itemBuilder: (_, index) => entries[index],
@@ -421,6 +438,8 @@ class _ExplorerHomeState extends State<ExplorerHome>
 
   Widget _bookmark(String title, IconData icon, VoidCallback tap) => InkWell(
     hoverColor: Colors.transparent,
+    highlightColor: Colors.transparent,
+    splashFactory: NoSplash.splashFactory,
     onTap: tap,
     child: Padding(
       padding: const EdgeInsets.symmetric(horizontal: 10),

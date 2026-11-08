@@ -38,6 +38,33 @@ String dateLabel(num timestamp) {
   return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
 }
 
+/// Compact list metadata in the device's local time; omit the current year.
+String listDateTimeLabel(num timestamp) {
+  if (timestamp <= 0) return '';
+  final date = DateTime.fromMillisecondsSinceEpoch(timestamp.toInt());
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+  final year = date.year == DateTime.now().year ? '' : ' ${date.year}';
+  final hour = (date.hour % 12 == 0 ? 12 : date.hour % 12).toString().padLeft(
+    2,
+    '0',
+  );
+  final minute = date.minute.toString().padLeft(2, '0');
+  return '${months[date.month - 1]}$year  $hour:$minute ${date.hour < 12 ? 'AM' : 'PM'}';
+}
+
 final _archiveExtension = RegExp(r'\.(zip|7z)$', caseSensitive: false);
 
 bool isSupportedArchive(String name) => _archiveExtension.hasMatch(name);

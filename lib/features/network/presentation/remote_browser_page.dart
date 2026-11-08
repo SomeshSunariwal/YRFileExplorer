@@ -1,3 +1,5 @@
+import 'package:yr_file_explorer/shared/widgets/explorer_notice.dart';
+import 'package:yr_file_explorer/shared/widgets/selection_drag_area.dart';
 import 'package:yr_file_explorer/core/utils/file_sort.dart';
 import 'package:yr_file_explorer/shared/dialogs/explorer_dialog.dart';
 import 'package:yr_file_explorer/shared/widgets/explorer_search_header.dart';
@@ -238,8 +240,11 @@ class _RemoteBrowserState extends State<RemoteBrowser> {
         directory: e['directory'] == true,
       );
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Saved $target')));
+        showExplorerNotice(
+          context,
+          'Saved $target',
+          icon: Icons.download_outlined,
+        );
       }
     } catch (e) {
       if (!showFailure) rethrow;
@@ -557,160 +562,176 @@ class _RemoteBrowserState extends State<RemoteBrowser> {
                 () => showExplorerWindows(context),
               ),
             ],
-      body: Column(
-        children: [
-          Row(
-            children: [
-              IconButton(
-                tooltip: 'Parent folder',
-                onPressed: path == '/'
-                    ? null
-                    : () => navigate(parentPath(path)),
-                icon: const Icon(
-                  Icons.arrow_upward,
-                  size: 20,
-                  color: primaryBlue,
-                ),
-              ),
-              Expanded(
-                child: Text(
-                  '${profile['protocol']} · ${profile['host']} · $path',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 11, color: Colors.grey),
-                ),
-              ),
-              TextButton.icon(
-                onPressed: busy || shares ? null : upload,
-                icon: const Icon(Icons.upload_outlined, size: 18),
-                label: const Text('Upload', style: TextStyle(fontSize: 12)),
-              ),
-            ],
-          ),
-          Expanded(
-            child: loading
-                ? const Center(child: CircularProgressIndicator())
-                : error != null
-                ? EmptyState(
-                    icon: Icons.dns_outlined,
-                    title: 'Connection failed',
-                    message: error!,
-                    action: FilledButton(
-                      onPressed: load,
-                      child: const Text('Retry'),
-                    ),
-                  )
-                : visible.isEmpty
-                ? const EmptyState(
-                    title: 'Empty remote folder',
-                    message: 'Upload files or create a folder.',
-                  )
-                : RefreshIndicator(
-                    onRefresh: load,
-                    child: grid
-                        ? GridView.builder(
-                            padding: EdgeInsets.fromLTRB(
-                              10,
-                              10,
-                              10,
-                              ExplorerBottomBar.contentBottomPadding(context),
-                            ),
-                            gridDelegate:
-                                const SliverGridDelegateWithFixedCrossAxisCount(
-                                  crossAxisCount: 4,
-                                  childAspectRatio: .82,
-                                  crossAxisSpacing: 6,
-                                  mainAxisSpacing: 8,
-                                ),
-                            itemCount: visible.length,
-                            itemBuilder: (_, i) {
-                              final e = visible[i];
-                              return InkWell(
-                                onLongPress: shares ? null : () => toggle(e),
-                                onTap: () => selected.isNotEmpty
-                                    ? toggle(e)
-                                    : e['share'] != null
-                                    ? setState(() {
-                                        profile['share'] = e['share'];
-                                        path = '/';
-                                        selected.clear();
-                                        load();
-                                      })
-                                    : e['directory'] == true
-                                    ? navigate(e['path'])
-                                    : download(e),
-                                child: Container(
-                                  padding: const EdgeInsets.all(7),
-                                  decoration: BoxDecoration(
-                                    color: selected.contains(e['path'])
-                                        ? primaryBlue.withValues(alpha: .12)
-                                        : null,
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      selected.contains(e['path'])
-                                          ? const Icon(
-                                              Icons.check_circle,
-                                              size: 42,
-                                              color: primaryBlue,
-                                            )
-                                          : FileGlyph({
-                                              ...e,
-                                              'path': '',
-                                            }, size: 46),
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        e['name'],
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        textAlign: TextAlign.center,
-                                        style: const TextStyle(fontSize: 11),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              );
-                            },
-                          )
-                        : ListView.builder(
-                            padding: EdgeInsets.only(
-                              bottom: ExplorerBottomBar.contentBottomPadding(
-                                context,
-                              ),
-                            ),
-                            itemCount: visible.length,
-                            itemBuilder: (_, i) {
-                              final e = visible[i];
-                              return ListTile(
-                                selected: selected.contains(e['path']),
-                                leading: FileGlyph({...e, 'path': ''}),
-                                title: Text(e['name']),
-                                subtitle: Text(
-                                  e['directory'] == true
-                                      ? 'Folder'
-                                      : sizeLabel(e['size']),
-                                ),
-                                onLongPress: shares ? null : () => toggle(e),
-                                onTap: () => selected.isNotEmpty
-                                    ? toggle(e)
-                                    : e['share'] != null
-                                    ? setState(() {
-                                        profile['share'] = e['share'];
-                                        path = '/';
-                                        selected.clear();
-                                        load();
-                                      })
-                                    : e['directory'] == true
-                                    ? navigate(e['path'])
-                                    : download(e),
-                              );
-                            },
-                          ),
+      body: SelectionDragArea(
+        selected: selected,
+        enabled: !busy && !shares,
+        onSelection: (id, value) => setState(() {
+          value ? selected.add(id) : selected.remove(id);
+        }),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                IconButton(
+                  tooltip: 'Parent folder',
+                  onPressed: path == '/'
+                      ? null
+                      : () => navigate(parentPath(path)),
+                  icon: const Icon(
+                    Icons.arrow_upward,
+                    size: 20,
+                    color: primaryBlue,
                   ),
-          ),
-        ],
+                ),
+                Expanded(
+                  child: Text(
+                    '${profile['protocol']} · ${profile['host']} · $path',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 11, color: Colors.grey),
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: busy || shares ? null : upload,
+                  icon: const Icon(Icons.upload_outlined, size: 18),
+                  label: const Text('Upload', style: TextStyle(fontSize: 12)),
+                ),
+              ],
+            ),
+            Expanded(
+              child: loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : error != null
+                  ? EmptyState(
+                      icon: Icons.dns_outlined,
+                      title: 'Connection failed',
+                      message: error!,
+                      action: FilledButton(
+                        onPressed: load,
+                        child: const Text('Retry'),
+                      ),
+                    )
+                  : visible.isEmpty
+                  ? const EmptyState(
+                      title: 'Empty remote folder',
+                      message: 'Upload files or create a folder.',
+                    )
+                  : RefreshIndicator(
+                      onRefresh: load,
+                      child: grid
+                          ? GridView.builder(
+                              padding: EdgeInsets.fromLTRB(
+                                10,
+                                10,
+                                10,
+                                ExplorerBottomBar.contentBottomPadding(context),
+                              ),
+                              gridDelegate:
+                                  const SliverGridDelegateWithFixedCrossAxisCount(
+                                    crossAxisCount: 4,
+                                    childAspectRatio: .82,
+                                    crossAxisSpacing: 6,
+                                    mainAxisSpacing: 8,
+                                  ),
+                              itemCount: visible.length,
+                              itemBuilder: (_, i) {
+                                final e = visible[i];
+                                return SelectionDragItem(
+                                  id: e['path'] as String,
+                                  enabled: !shares,
+                                  child: InkWell(
+                                    onTap: () => selected.isNotEmpty
+                                        ? toggle(e)
+                                        : e['share'] != null
+                                        ? setState(() {
+                                            profile['share'] = e['share'];
+                                            path = '/';
+                                            selected.clear();
+                                            load();
+                                          })
+                                        : e['directory'] == true
+                                        ? navigate(e['path'])
+                                        : download(e),
+                                    child: Container(
+                                      padding: const EdgeInsets.all(7),
+                                      decoration: BoxDecoration(
+                                        color: selected.contains(e['path'])
+                                            ? primaryBlue.withValues(alpha: .12)
+                                            : null,
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                      child: Column(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          selected.contains(e['path'])
+                                              ? const Icon(
+                                                  Icons.check_circle,
+                                                  size: 42,
+                                                  color: primaryBlue,
+                                                )
+                                              : FileGlyph({
+                                                  ...e,
+                                                  'path': '',
+                                                }, size: 46),
+                                          const SizedBox(height: 8),
+                                          Text(
+                                            e['name'],
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            textAlign: TextAlign.center,
+                                            style: const TextStyle(
+                                              fontSize: 11,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                            )
+                          : ListView.builder(
+                              padding: EdgeInsets.only(
+                                bottom: ExplorerBottomBar.contentBottomPadding(
+                                  context,
+                                ),
+                              ),
+                              itemCount: visible.length,
+                              itemBuilder: (_, i) {
+                                final e = visible[i];
+                                return SelectionDragItem(
+                                  id: e['path'] as String,
+                                  enabled: !shares,
+                                  child: ListTile(
+                                    selected: selected.contains(e['path']),
+                                    leading: FileGlyph({...e, 'path': ''}),
+                                    title: Text(e['name']),
+                                    subtitle: Text(
+                                      e['directory'] == true
+                                          ? 'Folder'
+                                          : sizeLabel(e['size']),
+                                    ),
+                                    onTap: () => selected.isNotEmpty
+                                        ? toggle(e)
+                                        : e['share'] != null
+                                        ? setState(() {
+                                            profile['share'] = e['share'];
+                                            path = '/';
+                                            selected.clear();
+                                            load();
+                                          })
+                                        : e['directory'] == true
+                                        ? navigate(e['path'])
+                                        : download(e),
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }

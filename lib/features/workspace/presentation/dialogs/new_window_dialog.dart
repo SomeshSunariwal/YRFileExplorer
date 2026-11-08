@@ -19,6 +19,7 @@ class _WindowType {
     this.network = false,
   });
   bool get needsPath => hint != null;
+  bool get supportsSplit => id == 'device' || id == 'ftp';
 }
 
 const _types = [
@@ -47,12 +48,6 @@ const _types = [
     Icons.public,
     hint: 'http://example.com',
     network: true,
-  ),
-  _WindowType(
-    'file',
-    'file (Local)',
-    Icons.folder_outlined,
-    hint: '/storage/emulated/0',
   ),
   _WindowType(
     'https',
@@ -86,6 +81,11 @@ Future<bool> showNewExplorerWindow(BuildContext context) async {
   );
   if (choice == null || !context.mounted) return false;
   if (choice['split'] == true) {
+    if (choice['type'] == 'ftp') {
+      session.openPage('ftp');
+      session.setSplit(session.activeId!, true);
+      return true;
+    }
     var local = session.windows
         .where(
           (w) =>
@@ -129,8 +129,6 @@ Future<bool> showNewExplorerWindow(BuildContext context) async {
         'protocol': 'SMB',
         ...choice['profile'] as Map<String, dynamic>,
       });
-    case 'file':
-      session.open(choice['path']);
     case 'device':
       session.open(primary);
     case 'download':
@@ -166,12 +164,6 @@ class _NewWindowDialogState extends State<_NewWindowDialog> {
   String? error;
   final typeAnchor = GlobalKey();
   bool pickerOpen = false;
-  @override
-  void initState() {
-    super.initState();
-    drafts['file'] = widget.initialPath;
-  }
-
   @override
   void dispose() {
     path.dispose();
@@ -250,6 +242,12 @@ class _NewWindowDialogState extends State<_NewWindowDialog> {
                 ),
                 if (entry.id == type.id)
                   const Icon(Icons.check, size: 16, color: primaryBlue),
+                if (entry.id != type.id && entry.supportsSplit)
+                  const Icon(
+                    Icons.splitscreen_outlined,
+                    size: 18,
+                    color: primaryBlue,
+                  ),
               ],
             ),
           ),
@@ -262,12 +260,6 @@ class _NewWindowDialogState extends State<_NewWindowDialog> {
 
   void create() {
     final value = path.text.trim();
-    if (type.id == 'file' &&
-        (value.isEmpty ||
-            !ExplorerWorkspaceSession.instance.containsStoragePath(value))) {
-      setState(() => error = 'Choose a folder in internal storage or SD card');
-      return;
-    }
     if (type.id == 'http' || type.id == 'https' || type.id == 'samba') {
       final uri = Uri.tryParse(value);
       final scheme = type.id == 'samba' ? 'smb' : type.id;
@@ -356,9 +348,7 @@ class _NewWindowDialogState extends State<_NewWindowDialog> {
                       style: const TextStyle(fontSize: 14),
                       autocorrect: false,
                       enableSuggestions: false,
-                      keyboardType: type.id == 'file'
-                          ? TextInputType.text
-                          : TextInputType.url,
+                      keyboardType: TextInputType.url,
                       textInputAction: TextInputAction.done,
                       onSubmitted: (_) => create(),
                       onChanged: (_) {
@@ -386,10 +376,10 @@ class _NewWindowDialogState extends State<_NewWindowDialog> {
         onPressed: () => Navigator.pop(context),
         child: const Text('Cancel'),
       ),
-      if (type.id == 'device')
+      if (type.supportsSplit)
         OutlinedButton(
           onPressed: () => Navigator.pop(context, <String, dynamic>{
-            'type': 'device',
+            'type': type.id,
             'split': true,
           }),
           child: const Text('Split'),

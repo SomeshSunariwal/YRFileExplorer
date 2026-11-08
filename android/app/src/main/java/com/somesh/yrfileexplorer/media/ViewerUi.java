@@ -1,17 +1,44 @@
 package com.somesh.yrfileexplorer.media;
 
 import android.app.Activity;
+import android.app.Dialog;
+import android.content.Context;
+import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.view.Gravity;
+import android.view.View;
+import android.view.Window;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.ImageButton;
 import android.widget.ImageView;
+import org.json.JSONException;
+import org.json.JSONObject;
 
 /** Small shared native viewer controls; dimensions are density independent. */
 public final class ViewerUi {
     public static final int CYAN = 0xff0ba5c6;
     private ViewerUi() {}
+    static boolean isDark(Context context) {
+        String settings = context.getSharedPreferences("yr_preferences", Context.MODE_PRIVATE)
+                .getString("settings", "{}");
+        try {
+            return new JSONObject(settings).optBoolean("dark", false);
+        } catch (JSONException ignored) {
+            return false;
+        }
+    }
+
+    static void showDialog(Dialog dialog, boolean dark) {
+        dialog.show();
+        Window window = dialog.getWindow();
+        if (dark && window != null) {
+            View decor = window.getDecorView();
+            decor.setOutlineAmbientShadowColor(Color.TRANSPARENT);
+            decor.setOutlineSpotShadowColor(Color.TRANSPARENT);
+        }
+    }
+
     public static int dp(Activity activity, float value) {
         return Math.round(value * activity.getResources().getDisplayMetrics().density);
     }

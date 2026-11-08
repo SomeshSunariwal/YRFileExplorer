@@ -1,3 +1,4 @@
+import 'package:yr_file_explorer/shared/widgets/selection_drag_area.dart';
 import 'package:yr_file_explorer/core/utils/file_sort.dart';
 import 'package:yr_file_explorer/shared/dialogs/operation_progress_dialog.dart';
 import 'package:yr_file_explorer/features/workspace/presentation/widgets/explorer_bottom_bar.dart';
@@ -142,62 +143,76 @@ class _TrashPageState extends State<TrashPage> {
           onTap: () => showExplorerWindows(context),
         ),
       ],
-      body: Column(
-        children: [
-          Expanded(
-            child: loading
-                ? const Center(child: CircularProgressIndicator())
-                : error != null
-                ? EmptyState(
-                    title: 'Cannot read Recycle Bin',
-                    message: error!,
-                    action: FilledButton(
-                      onPressed: load,
-                      child: const Text('Retry'),
-                    ),
-                  )
-                : rows.isEmpty
-                ? const EmptyState(
-                    icon: Icons.delete_outline,
-                    title: 'Recycle Bin is empty',
-                    message: 'Deleted files will appear here.',
-                  )
-                : RefreshIndicator(
-                    onRefresh: load,
-                    child: ListView.builder(
-                      padding: EdgeInsets.only(
-                        bottom: ExplorerBottomBar.contentBottomPadding(context),
+      body: SelectionDragArea(
+        selected: selected,
+        enabled: !busy,
+        onSelection: (id, value) => setState(() {
+          value ? selected.add(id) : selected.remove(id);
+        }),
+        child: Column(
+          children: [
+            Expanded(
+              child: loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : error != null
+                  ? EmptyState(
+                      title: 'Cannot read Recycle Bin',
+                      message: error!,
+                      action: FilledButton(
+                        onPressed: load,
+                        child: const Text('Retry'),
                       ),
-                      itemCount: rows.length,
-                      itemBuilder: (_, i) {
-                        final e = rows[i];
-                        return ListTile(
-                          selected: selected.contains(e['id']),
-                          leading: selected.contains(e['id'])
-                              ? const Icon(
-                                  Icons.check_circle,
+                    )
+                  : rows.isEmpty
+                  ? const EmptyState(
+                      icon: Icons.delete_outline,
+                      title: 'Recycle Bin is empty',
+                      message: 'Deleted files will appear here.',
+                    )
+                  : RefreshIndicator(
+                      onRefresh: load,
+                      child: ListView.builder(
+                        padding: EdgeInsets.only(
+                          bottom: ExplorerBottomBar.contentBottomPadding(
+                            context,
+                          ),
+                        ),
+                        itemCount: rows.length,
+                        itemBuilder: (_, i) {
+                          final e = rows[i];
+                          return SelectionDragItem(
+                            id: e['id'] as String,
+                            child: ListTile(
+                              selected: selected.contains(e['id']),
+                              leading: selected.contains(e['id'])
+                                  ? const Icon(
+                                      Icons.check_circle,
+                                      color: primaryBlue,
+                                    )
+                                  : FileGlyph(e),
+                              title: Text(e['name']),
+                              subtitle: Text(
+                                '${e['original']}\nDeleted ${dateLabel(e['deleted'])}',
+                                style: const TextStyle(fontSize: 11),
+                              ),
+                              isThreeLine: true,
+                              onTap: () => toggle(e),
+                              trailing: IconButton(
+                                tooltip: 'Restore',
+                                icon: const Icon(
+                                  Icons.restore,
                                   color: primaryBlue,
-                                )
-                              : FileGlyph(e),
-                          title: Text(e['name']),
-                          subtitle: Text(
-                            '${e['original']}\nDeleted ${dateLabel(e['deleted'])}',
-                            style: const TextStyle(fontSize: 11),
-                          ),
-                          isThreeLine: true,
-                          onTap: () => toggle(e),
-                          onLongPress: () => toggle(e),
-                          trailing: IconButton(
-                            tooltip: 'Restore',
-                            icon: const Icon(Icons.restore, color: primaryBlue),
-                            onPressed: () => operate('restore', [e]),
-                          ),
-                        );
-                      },
+                                ),
+                                onPressed: () => operate('restore', [e]),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
                     ),
-                  ),
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -6,10 +6,23 @@ import com.somesh.yrfileexplorer.storage.FolderAnalyzer;
 import android.content.Context;
 import net.lingala.zip4j.ZipFile;
 import net.lingala.zip4j.model.FileHeader;
-import java.io.*;
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.charset.Charset;
-import java.nio.file.*;
-import java.util.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.UUID;
 
 public final class ArchiveEngine {
     private static ZipFile zip(String path,String password,String charset) {

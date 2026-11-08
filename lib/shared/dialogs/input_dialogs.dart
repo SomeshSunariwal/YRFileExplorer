@@ -1,14 +1,19 @@
 import 'package:yr_file_explorer/shared/dialogs/explorer_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:yr_file_explorer/shared/widgets/explorer_notice.dart';
 
 void showError(BuildContext context, Object error) {
   if (!context.mounted) return;
   final message = error is PlatformException
       ? error.message ?? error.code
       : error.toString();
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(content: Text(message), duration: const Duration(seconds: 6)),
+  showExplorerNotice(
+    context,
+    message,
+    icon: Icons.error_outline,
+    error: true,
+    duration: const Duration(seconds: 6),
   );
 }
 

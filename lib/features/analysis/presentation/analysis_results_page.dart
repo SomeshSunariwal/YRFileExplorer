@@ -1,3 +1,4 @@
+import 'package:yr_file_explorer/shared/widgets/selection_drag_area.dart';
 import 'package:yr_file_explorer/core/utils/file_sort.dart';
 import 'package:yr_file_explorer/shared/dialogs/operation_progress_dialog.dart';
 
@@ -14,6 +15,7 @@ import 'package:yr_file_explorer/core/platform/native_bridge.dart';
 import 'package:yr_file_explorer/core/settings/app_settings.dart';
 import 'package:yr_file_explorer/core/utils/file_format.dart';
 import 'package:yr_file_explorer/features/files/application/file_clipboard.dart';
+import 'package:yr_file_explorer/features/files/presentation/open_explorer_file.dart';
 import 'package:yr_file_explorer/features/workspace/application/workspace_session.dart';
 import 'package:yr_file_explorer/features/workspace/presentation/dialogs/windows_dialog.dart';
 import 'package:yr_file_explorer/features/workspace/presentation/widgets/explorer_pane.dart';
@@ -149,7 +151,7 @@ class _AnalysisResultsPageState extends State<AnalysisResultsPage> {
 
   void copy(bool move) {
     widget.clipboard.put(selected.toList(), move);
-    setState(() => selected.clear());
+    clearSelection();
   }
 
   Future<void> remove() async {
@@ -189,7 +191,7 @@ class _AnalysisResultsPageState extends State<AnalysisResultsPage> {
 
   void back() {
     if (selected.isNotEmpty) {
-      setState(() => selected.clear());
+      clearSelection();
       return;
     }
     final s = ExplorerWorkspaceSession.instance;
@@ -200,6 +202,25 @@ class _AnalysisResultsPageState extends State<AnalysisResultsPage> {
           : null,
     );
   }
+
+  void clearSelection() => setState(selected.clear);
+
+  void toggleSelection(String path) => setState(() {
+    if (!selected.remove(path)) selected.add(path);
+  });
+
+  void selectAll() => setState(() {
+    if (duplicates) {
+      selected.clear();
+      for (final group in duplicateGroups) {
+        selected.addAll(
+          group.files.skip(1).map((file) => file['path'] as String),
+        );
+      }
+    } else {
+      selected.addAll(rows.map((row) => row['path'] as String));
+    }
+  });
 
   Widget duplicateList() => ListView.builder(
     padding: EdgeInsets.fromLTRB(
@@ -224,14 +245,15 @@ class _AnalysisResultsPageState extends State<AnalysisResultsPage> {
                 ? expandedGroups.remove(group.id)
                 : expandedGroups.add(group.id),
           ),
-          onToggle: (path) => setState(
-            () => selected.contains(path)
-                ? selected.remove(path)
-                : selected.add(path),
-          ),
+          onToggle: toggleSelection,
           onOpen: (file) async {
             try {
-              await Native.call('open', {'path': file['path']});
+              await openExplorerFile(
+                context,
+                file,
+                nearby: group.files,
+                recycle: widget.settings.recycle,
+              );
             } catch (e) {
               if (mounted) showError(context, e);
             }
@@ -248,18 +270,8 @@ class _AnalysisResultsPageState extends State<AnalysisResultsPage> {
     onBack: back,
     selecting: selected.isNotEmpty,
     selectAllLabel: duplicates ? 'Select extras' : 'Select all',
-    onSelectAll: () => setState(() {
-      if (duplicates) {
-        selected.clear();
-        selected.addAll([
-          for (final group in duplicateGroups)
-            for (final file in group.files.skip(1)) file['path'] as String,
-        ]);
-      } else {
-        selected.addAll(rows.map((e) => e['path'] as String));
-      }
-    }),
-    onClearSelection: () => setState(() => selected.clear()),
+    onSelectAll: selectAll,
+    onClearSelection: clearSelection,
     title: Text(
       selected.isEmpty ? widget.title : '${selected.length}/${rows.length}',
     ),
@@ -298,24 +310,25 @@ class _AnalysisResultsPageState extends State<AnalysisResultsPage> {
             ExplorerAction(
               icon: Icons.select_all,
               label: duplicates ? 'Select extras' : 'Select all',
-              onTap: () => setState(() {
-                if (duplicates) {
-                  selected.clear();
-                  selected.addAll([
-                    for (final group in duplicateGroups)
-                      for (final file in group.files.skip(1))
-                        file['path'] as String,
-                  ]);
-                } else {
-                  selected.addAll(rows.map((e) => e['path'] as String));
-                }
-              }),
+              onTap: selectAll,
             ),
+            if (duplicates && selected.length == 1)
+              ExplorerAction(
+                icon: Icons.folder_open_outlined,
+                label: 'Locate',
+                enabled: !busy,
+                onTap: () {
+                  if (selected.length != 1) return;
+                  ExplorerWorkspaceSession.instance.open(
+                    parentPath(selected.single),
+                  );
+                },
+              ),
             if (duplicates)
               ExplorerAction(
                 icon: Icons.deselect,
                 label: 'Clear',
-                onTap: () => setState(() => selected.clear()),
+                onTap: clearSelection,
               ),
             ExplorerAction(
               icon: Icons.filter_none,
@@ -323,75 +336,85 @@ class _AnalysisResultsPageState extends State<AnalysisResultsPage> {
               onTap: () => showExplorerWindows(context),
             ),
           ],
-    body: error.isNotEmpty
-        ? EmptyState(
-            title: 'Analysis unavailable',
-            message: error,
-            action: TextButton(
-              onPressed: refresh,
-              child: const Text('Try again'),
+    body: SelectionDragArea(
+      selected: selected,
+      enabled: !busy,
+      onSelection: (id, value) => setState(() {
+        value ? selected.add(id) : selected.remove(id);
+      }),
+      child: error.isNotEmpty
+          ? EmptyState(
+              title: 'Analysis unavailable',
+              message: error,
+              action: TextButton(
+                onPressed: refresh,
+                child: const Text('Try again'),
+              ),
+            )
+          : rows.isEmpty
+          ? EmptyState(
+              icon: Icons.search_off,
+              title: busy ? 'Analyzing…' : 'No items found',
+              message: widget.kind == 'large'
+                  ? 'Files larger than 10 MB appear here.'
+                  : '',
+            )
+          : duplicates
+          ? duplicateList()
+          : ListView.builder(
+              padding: EdgeInsets.only(
+                bottom: ExplorerBottomBar.contentBottomPadding(context),
+              ),
+              itemCount: rows.length,
+              itemBuilder: (_, i) {
+                final e = rows[i], path = e['path'] as String;
+                void toggle() => toggleSelection(path);
+                return SelectionDragItem(
+                  id: path,
+                  child: ListTile(
+                    selected: selected.contains(path),
+                    leading: FileGlyph(e, size: 34),
+                    title: Text(
+                      e['name'],
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Text(
+                      '${sizeLabel(e['size'] ?? 0)} · $path',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 11),
+                    ),
+                    trailing: selected.isNotEmpty
+                        ? Checkbox(
+                            value: selected.contains(path),
+                            onChanged: (_) => toggle(),
+                          )
+                        : const Icon(Icons.chevron_right, size: 20),
+                    onTap: () async {
+                      if (selected.isNotEmpty) {
+                        toggle();
+                        return;
+                      }
+                      if (e['directory'] == true) {
+                        ExplorerWorkspaceSession.instance.open(path);
+                      } else {
+                        try {
+                          await openExplorerFile(
+                            context,
+                            e,
+                            nearby: rows,
+                            recycle: widget.settings.recycle,
+                          );
+                        } catch (error) {
+                          if (context.mounted) showError(context, error);
+                        }
+                      }
+                    },
+                  ),
+                );
+              },
             ),
-          )
-        : rows.isEmpty
-        ? EmptyState(
-            icon: Icons.search_off,
-            title: busy ? 'Analyzing…' : 'No items found',
-            message: widget.kind == 'large'
-                ? 'Files larger than 10 MB appear here.'
-                : '',
-          )
-        : duplicates
-        ? duplicateList()
-        : ListView.builder(
-            padding: EdgeInsets.only(
-              bottom: ExplorerBottomBar.contentBottomPadding(context),
-            ),
-            itemCount: rows.length,
-            itemBuilder: (_, i) {
-              final e = rows[i], path = e['path'] as String;
-              void toggle() => setState(
-                () => selected.contains(path)
-                    ? selected.remove(path)
-                    : selected.add(path),
-              );
-              return ListTile(
-                selected: selected.contains(path),
-                leading: FileGlyph(e, size: 34),
-                title: Text(
-                  e['name'],
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                subtitle: Text(
-                  '${sizeLabel(e['size'] ?? 0)} · $path',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 11),
-                ),
-                trailing: selected.isNotEmpty
-                    ? Checkbox(
-                        value: selected.contains(path),
-                        onChanged: (_) => toggle(),
-                      )
-                    : const Icon(Icons.chevron_right, size: 20),
-                onLongPress: toggle,
-                onTap: () async {
-                  if (selected.isNotEmpty) {
-                    toggle();
-                    return;
-                  }
-                  if (e['directory'] == true) {
-                    ExplorerWorkspaceSession.instance.open(path);
-                  } else {
-                    try {
-                      await Native.call('open', {'path': path});
-                    } catch (error) {
-                      if (context.mounted) showError(context, error);
-                    }
-                  }
-                },
-              );
-            },
-          ),
+    ),
   );
 }

@@ -1,9 +1,11 @@
+import 'package:yr_file_explorer/shared/widgets/explorer_notice.dart';
 import 'package:yr_file_explorer/shared/dialogs/explorer_dialog.dart';
 
 import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'package:yr_file_explorer/core/platform/native_bridge.dart';
 import 'package:yr_file_explorer/core/theme/file_categories.dart';
@@ -106,8 +108,10 @@ class _ImageViewerState extends State<ImageViewer> with WidgetsBindingObserver {
       return;
     }
     if (images.length < 2) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('This folder contains one image')),
+      showExplorerNotice(
+        context,
+        'This folder contains one image',
+        icon: Icons.image_outlined,
       );
       return;
     }
@@ -200,6 +204,7 @@ class _ImageViewerState extends State<ImageViewer> with WidgetsBindingObserver {
 
   Widget imageMenu() => PopupMenuButton<String>(
     tooltip: 'Image actions',
+    icon: const Icon(Icons.more_vert, color: Colors.white, size: 22),
     onSelected: action,
     itemBuilder: (_) =>
         [
@@ -226,245 +231,240 @@ class _ImageViewerState extends State<ImageViewer> with WidgetsBindingObserver {
             .toList(),
   );
 
-  Widget chrome({required Widget child}) => Material(
-    color: Theme.of(context).colorScheme.surface.withValues(alpha: .94),
-    elevation: 4,
-    borderRadius: BorderRadius.circular(20),
-    clipBehavior: Clip.antiAlias,
-    child: child,
+  Widget overlay({required bool top, required Widget child}) => IgnorePointer(
+    ignoring: !controls,
+    child: ExcludeSemantics(
+      excluding: !controls,
+      child: AnimatedOpacity(
+        opacity: controls ? 1 : 0,
+        duration: MediaQuery.disableAnimationsOf(context)
+            ? Duration.zero
+            : const Duration(milliseconds: 180),
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: top
+                          ? const [
+                              Color(0xc9000000),
+                              Color(0x99000000),
+                              Colors.transparent,
+                            ]
+                          : const [
+                              Colors.transparent,
+                              Color(0xb8000000),
+                              Color(0xe6000000),
+                            ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            SafeArea(
+              top: top,
+              bottom: !top,
+              child: Padding(
+                padding: top
+                    ? const EdgeInsets.fromLTRB(6, 0, 6, 12)
+                    : const EdgeInsets.only(top: 16, bottom: 4),
+                child: Material(type: MaterialType.transparency, child: child),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+
+  Widget control(
+    String label,
+    IconData icon,
+    VoidCallback onPressed, {
+    Color color = Colors.white,
+  }) => IconButton(
+    tooltip: label,
+    onPressed: onPressed,
+    color: color,
+    icon: Icon(icon, size: 22),
+  );
+
+  Widget header() => Row(
+    children: [
+      control('Back', Icons.arrow_back, () => Navigator.maybePop(context)),
+      Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              baseName(path),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+              ),
+            ),
+            Text(
+              '${index + 1} of ${images.length}',
+              style: const TextStyle(fontSize: 11, color: Colors.white70),
+            ),
+          ],
+        ),
+      ),
+      imageMenu(),
+    ],
+  );
+
+  Widget thumbnails() => SizedBox(
+    height: 64,
+    child: LayoutBuilder(
+      builder: (context, constraints) {
+        if (thumbnailViewport != constraints.maxWidth) {
+          thumbnailViewport = constraints.maxWidth;
+          queueThumbnailSync();
+        }
+        final inset = ((constraints.maxWidth - thumbnailExtent) / 2).clamp(
+          0.0,
+          double.infinity,
+        );
+        return ListView.builder(
+          controller: thumbnailScroll,
+          itemExtent: thumbnailExtent,
+          scrollDirection: Axis.horizontal,
+          itemCount: images.length,
+          padding: EdgeInsets.symmetric(horizontal: inset, vertical: 6),
+          itemBuilder: (_, i) => Semantics(
+            selected: i == index,
+            label: 'Image ${i + 1}: ${baseName(images[i])}',
+            child: InkWell(
+              onTap: () {
+                setState(() => zoomed = false);
+                pages.animateToPage(
+                  i,
+                  duration: const Duration(milliseconds: 260),
+                  curve: Curves.easeInOutCubic,
+                );
+              },
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 3),
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: i == index ? primaryBlue : Colors.transparent,
+                    width: 2,
+                  ),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: Image(
+                    image: ResizeImage(
+                      FileImage(File(images[i])),
+                      width: 128,
+                      height: 128,
+                      policy: ResizeImagePolicy.fit,
+                    ),
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, _, _) => const Icon(
+                      Icons.broken_image_outlined,
+                      color: Colors.white70,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    ),
+  );
+
+  Widget footer() => Column(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      if (images.length > 1) thumbnails(),
+      Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          control('Rotate', Icons.rotate_right, () => action('Turn right')),
+          control('Share', Icons.share_outlined, () => action('Share')),
+          control('Slideshow', Icons.slideshow_outlined, toggleSlideshow),
+          if (widget.canDelete)
+            control(
+              'Delete',
+              Icons.delete_outline,
+              () => action('Delete'),
+              color: const Color(0xffff8a87),
+            ),
+        ],
+      ),
+    ],
   );
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    backgroundColor: Colors.black,
-    body: Stack(
-      fit: StackFit.expand,
-      children: [
-        GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () {
-            stopSlideshow();
-            setState(() => controls = !controls);
-          },
-          child: PageView.builder(
-            controller: pages,
-            physics: zoomed ? const NeverScrollableScrollPhysics() : null,
-            itemCount: images.length,
-            onPageChanged: (value) => setState(() {
-              index = value;
-              zoomed = false;
-            }),
-            itemBuilder: (_, i) => _ImageCanvas(
-              key: ValueKey(images[i]),
-              path: images[i],
-              active: i == index,
-              turns: rotations[images[i]] ?? 0,
-              onZoom: (value) {
-                if (i == index && mounted && zoomed != value) {
-                  setState(() => zoomed = value);
-                }
-              },
+  Widget build(BuildContext context) => AnnotatedRegion<SystemUiOverlayStyle>(
+    value: const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.light,
+      statusBarBrightness: Brightness.dark,
+      systemNavigationBarColor: Colors.transparent,
+      systemNavigationBarIconBrightness: Brightness.light,
+      systemNavigationBarContrastEnforced: false,
+      systemStatusBarContrastEnforced: false,
+    ),
+    child: Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () {
+              stopSlideshow();
+              setState(() => controls = !controls);
+            },
+            child: PageView.builder(
+              controller: pages,
+              physics: zoomed ? const NeverScrollableScrollPhysics() : null,
+              itemCount: images.length,
+              onPageChanged: (value) => setState(() {
+                index = value;
+                zoomed = false;
+              }),
+              itemBuilder: (_, i) => _ImageCanvas(
+                key: ValueKey(images[i]),
+                path: images[i],
+                active: i == index,
+                turns: rotations[images[i]] ?? 0,
+                onZoom: (value) {
+                  if (i == index && mounted && zoomed != value) {
+                    setState(() => zoomed = value);
+                  }
+                },
+              ),
             ),
           ),
-        ),
-        SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              children: [
-                IgnorePointer(
-                  ignoring: !controls,
-                  child: AnimatedSlide(
-                    offset: controls ? Offset.zero : const Offset(0, -1.3),
-                    duration: const Duration(milliseconds: 220),
-                    child: AnimatedOpacity(
-                      opacity: controls ? 1 : 0,
-                      duration: const Duration(milliseconds: 180),
-                      child: chrome(
-                        child: Row(
-                          children: [
-                            IconButton(
-                              tooltip: 'Back',
-                              onPressed: () => Navigator.maybePop(context),
-                              icon: const Icon(Icons.arrow_back, size: 22),
-                            ),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    baseName(path),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  Text(
-                                    '${index + 1} of ${images.length}',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .onSurfaceVariant,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            imageMenu(),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                const Spacer(),
-                IgnorePointer(
-                  ignoring: !controls,
-                  child: AnimatedSlide(
-                    offset: controls ? Offset.zero : const Offset(0, 1.3),
-                    duration: const Duration(milliseconds: 220),
-                    child: AnimatedOpacity(
-                      opacity: controls ? 1 : 0,
-                      duration: const Duration(milliseconds: 180),
-                      child: chrome(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (images.length > 1)
-                              SizedBox(
-                                height: 64,
-                                child: LayoutBuilder(
-                                  builder: (context, constraints) {
-                                    if (thumbnailViewport !=
-                                        constraints.maxWidth) {
-                                      thumbnailViewport = constraints.maxWidth;
-                                      queueThumbnailSync();
-                                    }
-                                    final inset =
-                                        ((constraints.maxWidth -
-                                                    thumbnailExtent) /
-                                                2)
-                                            .clamp(0.0, double.infinity);
-                                    return ListView.builder(
-                                      controller: thumbnailScroll,
-                                      itemExtent: thumbnailExtent,
-                                      scrollDirection: Axis.horizontal,
-                                      itemCount: images.length,
-                                      padding: EdgeInsets.symmetric(
-                                        horizontal: inset,
-                                        vertical: 6,
-                                      ),
-                                      itemBuilder: (_, i) => Semantics(
-                                        selected: i == index,
-                                        label:
-                                            'Image ${i + 1}: ${baseName(images[i])}',
-                                        child: InkWell(
-                                          onTap: () {
-                                            setState(() => zoomed = false);
-                                            pages.animateToPage(
-                                              i,
-                                              duration: const Duration(
-                                                milliseconds: 260,
-                                              ),
-                                              curve: Curves.easeInOutCubic,
-                                            );
-                                          },
-                                          child: Container(
-                                            width: 52,
-                                            margin: const EdgeInsets.symmetric(
-                                              horizontal: 3,
-                                            ),
-                                            padding: const EdgeInsets.all(2),
-                                            decoration: BoxDecoration(
-                                              borderRadius:
-                                                  BorderRadius.circular(10),
-                                              border: Border.all(
-                                                color: i == index
-                                                    ? primaryBlue
-                                                    : Colors.transparent,
-                                                width: 2,
-                                              ),
-                                            ),
-                                            child: ClipRRect(
-                                              borderRadius:
-                                                  BorderRadius.circular(6),
-                                              child: Image(
-                                                image: ResizeImage(
-                                                  FileImage(File(images[i])),
-                                                  width: 128,
-                                                  height: 128,
-                                                  policy: ResizeImagePolicy.fit,
-                                                ),
-                                                fit: BoxFit.contain,
-                                                errorBuilder: (_, _, _) =>
-                                                    const Icon(
-                                                      Icons
-                                                          .broken_image_outlined,
-                                                    ),
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                ),
-                              ),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                              children: [
-                                IconButton(
-                                  tooltip: 'Rotate',
-                                  onPressed: () => action('Turn right'),
-                                  icon: const Icon(
-                                    Icons.rotate_right,
-                                    color: primaryBlue,
-                                  ),
-                                ),
-                                IconButton(
-                                  tooltip: 'Share',
-                                  onPressed: () => action('Share'),
-                                  icon: const Icon(
-                                    Icons.share_outlined,
-                                    color: primaryBlue,
-                                  ),
-                                ),
-                                IconButton(
-                                  tooltip: 'Slideshow',
-                                  onPressed: toggleSlideshow,
-                                  icon: const Icon(
-                                    Icons.slideshow_outlined,
-                                    color: primaryBlue,
-                                  ),
-                                ),
-                                if (widget.canDelete)
-                                  IconButton(
-                                    tooltip: 'Delete',
-                                    onPressed: () => action('Delete'),
-                                    icon: Icon(
-                                      Icons.delete_outline,
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .error,
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: overlay(top: true, child: header()),
           ),
-        ),
-      ],
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: overlay(top: false, child: footer()),
+          ),
+        ],
+      ),
     ),
   );
 }
@@ -518,13 +518,15 @@ class _ImageCanvasState extends State<_ImageCanvas> {
       maxScale: 8,
       onInteractionUpdate: (_) =>
           widget.onZoom(transform.value.getMaxScaleOnAxis() > 1.01),
-      child: Center(
-        child: RotatedBox(
-          quarterTurns: widget.turns,
-          child: Image.file(
-            File(widget.path),
-            fit: BoxFit.contain,
-            errorBuilder: (_, _, _) => const Text(
+      child: RotatedBox(
+        quarterTurns: widget.turns,
+        child: Image.file(
+          File(widget.path),
+          width: double.infinity,
+          height: double.infinity,
+          fit: BoxFit.contain,
+          errorBuilder: (_, _, _) => const Center(
+            child: Text(
               'Preview unavailable',
               style: TextStyle(color: Colors.white70),
             ),

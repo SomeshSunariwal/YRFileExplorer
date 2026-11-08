@@ -79,6 +79,7 @@ class _ExplorerWorkspaceState extends State<ExplorerWorkspace> {
   Future<void> restoreDefaults() async {
     if (restoredDefaults) return;
     restoredDefaults = true;
+    session.ensureDeviceWindow();
     for (final entry in session.defaults) {
       if (entry['profile'] is Map) {
         final profile = Map<String, dynamic>.from(entry['profile'] as Map);
@@ -164,6 +165,11 @@ class _ExplorerWorkspaceState extends State<ExplorerWorkspace> {
   Future<void> capturePreview() async {
     if (!mounted || session.swipeMotion.value != null) return;
     final id = session.activeId;
+    if (session.windows.any(
+      (window) => window.id == id && window.page == 'private',
+    )) {
+      return;
+    }
     final key = id == null
         ? session.homePreviewKey
         : session.windows.where((w) => w.id == id).firstOrNull?.previewKey;
@@ -220,6 +226,7 @@ class _ExplorerWorkspaceState extends State<ExplorerWorkspace> {
       return;
     }
     if ([
+      'private',
       'apps',
       'network',
       'trash',
@@ -229,6 +236,8 @@ class _ExplorerWorkspaceState extends State<ExplorerWorkspace> {
       'bluetooth',
       'netmanager',
       'downloads',
+      'sharing',
+      'sharing_history',
     ].contains(page)) {
       session.openPage(page);
       return;

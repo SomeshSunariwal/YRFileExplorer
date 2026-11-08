@@ -9,12 +9,14 @@ ThemeData buildExplorerTheme(Brightness brightness) {
     useMaterial3: true,
     brightness: brightness,
     primaryColor: primaryBlue,
+    shadowColor: dark ? Colors.transparent : null,
     colorScheme:
         ColorScheme.fromSeed(
           seedColor: primaryBlue,
           brightness: brightness,
           surface: dark ? explorerDarkSurface : Colors.white,
         ).copyWith(
+          shadow: dark ? Colors.transparent : null,
           surfaceContainerLowest: dark ? explorerDarkBase : Colors.white,
           surfaceContainerLow: dark
               ? const Color(0xff303030)

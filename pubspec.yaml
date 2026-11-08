@@ -1,7 +1,7 @@
 name: yr_file_explorer
 description: Tracker-free Android file manager with recursive folder analysis and a native Java engine.
 publish_to: none
-version: 1.0.0+1
+version: 1.0.1+2
 environment:
   sdk: ^3.13.7
 dependencies:

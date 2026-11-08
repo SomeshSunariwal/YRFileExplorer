@@ -315,6 +315,8 @@ Future<String?> showExplorerActionMenu(
     'Open with': Icons.open_in_new,
     'Open as': Icons.description_outlined,
     'Favorite': Icons.star_outline,
+    'Move to Private Space': Icons.lock_outline,
+    'Remove from Private Space': Icons.lock_open_outlined,
     'Share': Icons.share_outlined,
     'Encrypt': Icons.lock_outline,
     'Decrypt': Icons.lock_open,

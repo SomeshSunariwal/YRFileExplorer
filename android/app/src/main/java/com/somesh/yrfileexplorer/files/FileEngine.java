@@ -2,16 +2,40 @@ package com.somesh.yrfileexplorer.files;
 
 import com.somesh.yrfileexplorer.storage.FolderAnalyzer;
 
-import java.io.*;
-import java.nio.file.*;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.File;
+import java.io.IOException;
+import java.io.InterruptedIOException;
+import java.io.OutputStream;
+import java.nio.file.DirectoryStream;
+import java.nio.file.FileAlreadyExistsException;
+import java.nio.file.FileVisitOption;
+import java.nio.file.FileVisitResult;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.BasicFileAttributes;
-import java.util.*;
-import java.security.*;
-import javax.crypto.*;
-import javax.crypto.spec.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.EnumSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.UUID;
+import java.security.SecureRandom;
+import javax.crypto.Cipher;
+import javax.crypto.SecretKeyFactory;
+import javax.crypto.spec.GCMParameterSpec;
+import javax.crypto.spec.PBEKeySpec;
+import javax.crypto.spec.SecretKeySpec;
 import net.lingala.zip4j.ZipFile;
 import net.lingala.zip4j.model.ZipParameters;
-import net.lingala.zip4j.model.enums.*;
+import net.lingala.zip4j.model.enums.AesKeyStrength;
+import net.lingala.zip4j.model.enums.EncryptionMethod;
 
 public final class FileEngine {
     private FileEngine() {}

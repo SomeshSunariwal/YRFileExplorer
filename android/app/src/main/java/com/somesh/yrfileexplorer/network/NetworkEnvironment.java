@@ -1,14 +1,29 @@
 package com.somesh.yrfileexplorer.network;
 
 import android.Manifest;
-import android.bluetooth.*;
-import android.content.*;
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothManager;
+import android.content.Context;
 import android.content.pm.PackageManager;
-import android.net.*;
-import java.io.*;
-import java.net.*;
-import java.util.*;
-import java.util.concurrent.*;
+import android.net.ConnectivityManager;
+import android.net.LinkAddress;
+import android.net.LinkProperties;
+import android.net.Network;
+import android.net.NetworkCapabilities;
+import android.net.RouteInfo;
+import java.io.IOException;
+import java.net.Inet4Address;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.Socket;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 public final class NetworkEnvironment {
     public static Map<String,Object> info(Context context){
@@ -36,10 +51,10 @@ public final class NetworkEnvironment {
     }
     public static BluetoothAdapter adapter(Context context){BluetoothManager manager=context.getSystemService(BluetoothManager.class);return manager==null?null:manager.getAdapter();}
     public static boolean bluetoothAllowed(Context context){return context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT)==PackageManager.PERMISSION_GRANTED;}
-    public static Map<String,Object> device(BluetoothDevice device){Map<String,Object> row=new HashMap<>();String name=device.getName();row.put("name",name==null?device.getAddress():name);row.put("address",device.getAddress());row.put("bonded",device.getBondState()==BluetoothDevice.BOND_BONDED);List<String> uuids=new ArrayList<>();if(device.getUuids()!=null)for(android.os.ParcelUuid uuid:device.getUuids())uuids.add(uuid.toString());row.put("uuids",uuids);return row;}
+    public static Map<String,Object> device(BluetoothDevice device){ try {Map<String,Object> row=new HashMap<>();String name=device.getName();row.put("name",name==null?device.getAddress():name);row.put("address",device.getAddress());row.put("bonded",device.getBondState()==BluetoothDevice.BOND_BONDED);List<String> uuids=new ArrayList<>();if(device.getUuids()!=null)for(android.os.ParcelUuid uuid:device.getUuids())uuids.add(uuid.toString());row.put("uuids",uuids);return row; } catch(SecurityException error) { throw new SecurityException("Allow Nearby devices access to read Bluetooth device details.", error); } }
     public static Map<String,Object> bluetooth(Context context){
         BluetoothAdapter adapter=adapter(context);boolean allowed=bluetoothAllowed(context);List<Map<String,Object>> devices=new ArrayList<>();
-        if(adapter!=null&&allowed)for(BluetoothDevice device:adapter.getBondedDevices())devices.add(device(device));
+        if(adapter!=null && context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT)==PackageManager.PERMISSION_GRANTED) { try { for(BluetoothDevice device:adapter.getBondedDevices()) devices.add(device(device)); } catch(SecurityException error) { allowed=false; } }
         return Map.of("supported",adapter!=null,"permission",allowed,"scanPermission",context.checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN)==PackageManager.PERMISSION_GRANTED,"enabled",adapter!=null&&allowed&&adapter.isEnabled(),"devices",devices);
     }
 }

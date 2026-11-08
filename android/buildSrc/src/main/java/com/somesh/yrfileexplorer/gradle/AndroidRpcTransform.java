@@ -7,8 +7,18 @@ import org.gradle.api.artifacts.transform.TransformOutputs;
 import org.gradle.api.artifacts.transform.TransformParameters;
 import org.gradle.api.file.FileSystemLocation;
 import org.gradle.api.provider.Provider;
-import java.io.*;
-import java.util.zip.*;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.EOFException;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+import java.util.zip.ZipOutputStream;
 
 /** Adapts DCERPC's JVM-only exception reference before Android compilation/R8. */
 public abstract class AndroidRpcTransform implements TransformAction<TransformParameters.None> {
@@ -32,7 +42,6 @@ public abstract class AndroidRpcTransform implements TransformAction<TransformPa
             ZipEntry entry;
             while ((entry = source.getNextEntry()) != null) {
                 String name = entry.getName();
-                // A rewritten JAR cannot retain signatures for the original bytecode.
                 if (name.matches("(?i)META-INF/[^/]+\\.(SF|RSA|DSA|EC)")) continue;
                 byte[] bytes = source.readAllBytes();
                 ZipEntry copy = new ZipEntry(name);
@@ -46,7 +55,7 @@ public abstract class AndroidRpcTransform implements TransformAction<TransformPa
         }
     }
 
-    /** Rewrite constant-pool UTF8 entries; code, resources and all other types stay intact. */
+    /** Rewrite constant-pool UTF8 entries; code, resources and other types stay intact. */
     private static byte[] adaptClass(byte[] bytes) throws IOException {
         ByteArrayOutputStream buffer = new ByteArrayOutputStream(bytes.length);
         try (DataInputStream in = new DataInputStream(new ByteArrayInputStream(bytes));

@@ -1,11 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/gestures.dart';
 
 /// Paints selection over visible items, without turning a drag into a tab swipe.
 class DragSelectionRegion extends StatefulWidget {
   final bool enabled;
+  final bool continueFromLongPress;
   final Map<String, GlobalKey> itemKeys;
   final ScrollController scroll;
   final bool Function(String path) isSelected;
@@ -14,6 +14,7 @@ class DragSelectionRegion extends StatefulWidget {
   const DragSelectionRegion({
     super.key,
     required this.enabled,
+    this.continueFromLongPress = false,
     required this.itemKeys,
     required this.scroll,
     required this.isSelected,
@@ -30,20 +31,51 @@ class _DragSelectionRegionState extends State<DragSelectionRegion> {
   Offset? pointer;
   final visited = <String>{};
   Timer? edgeScroll;
+  int? heldPointer;
+  String? heldPath;
+  bool heldSelected = false, continuingHold = false;
+
+  String? pathAt(Offset position) {
+    for (final item in widget.itemKeys.entries) {
+      final box = item.value.currentContext?.findRenderObject();
+      if (box is RenderBox &&
+          box.attached &&
+          box.hasSize &&
+          (Offset.zero & box.size).contains(box.globalToLocal(position))) {
+        return item.key;
+      }
+    }
+    return null;
+  }
+
+  @override
+  void didUpdateWidget(covariant DragSelectionRegion oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final path = heldPath;
+    // The row's long press has won the gesture arena and toggled selection.
+    // Keep following that same pointer instead of requiring a second drag.
+    if (widget.continueFromLongPress &&
+        widget.enabled &&
+        !dragging &&
+        heldPointer != null &&
+        path != null &&
+        widget.isSelected(path) != heldSelected) {
+      dragging = continuingHold = true;
+      selecting = widget.isSelected(path);
+      visited
+        ..clear()
+        ..add(path);
+      startEdgeScroll();
+    }
+  }
 
   void paintAtPointer() {
     if (pointer == null) return;
-    for (final item in widget.itemKeys.entries) {
-      final box = item.value.currentContext?.findRenderObject();
-      if (box is! RenderBox || !box.attached || !box.hasSize) continue;
-      if (!(Offset.zero & box.size).contains(box.globalToLocal(pointer!))) {
-        continue;
-      }
-      selecting ??= !widget.isSelected(item.key);
-      if (visited.add(item.key) && widget.isSelected(item.key) != selecting) {
-        widget.onSelection(item.key, selecting!);
-      }
-      break;
+    final path = pathAt(pointer!);
+    if (path == null) return;
+    selecting ??= !widget.isSelected(path);
+    if (visited.add(path) && widget.isSelected(path) != selecting) {
+      widget.onSelection(path, selecting!);
     }
   }
 
@@ -73,12 +105,7 @@ class _DragSelectionRegionState extends State<DragSelectionRegion> {
     });
   }
 
-  void start(DragStartDetails details) {
-    setState(() => dragging = true);
-    visited.clear();
-    selecting = null;
-    pointer = details.globalPosition;
-    paintAtPointer();
+  void startEdgeScroll() {
     edgeScroll?.cancel();
     edgeScroll = Timer.periodic(
       const Duration(milliseconds: 40),
@@ -91,6 +118,9 @@ class _DragSelectionRegionState extends State<DragSelectionRegion> {
     pointer = null;
     selecting = null;
     visited.clear();
+    continuingHold = false;
+    heldPointer = null;
+    heldPath = null;
     if (mounted) setState(() => dragging = false);
   }
 
@@ -102,28 +132,33 @@ class _DragSelectionRegionState extends State<DragSelectionRegion> {
 
   @override
   Widget build(BuildContext context) {
-    final active = widget.enabled || dragging;
-    return RawGestureDetector(
-      behavior: HitTestBehavior.translucent,
-      gestures: active
-          ? {
-              PanGestureRecognizer:
-                  GestureRecognizerFactoryWithHandlers<PanGestureRecognizer>(
-                    () => PanGestureRecognizer(),
-                    (recognizer) => recognizer
-                      ..dragStartBehavior = DragStartBehavior.down
-                      ..onStart = start
-                      ..onUpdate = (details) {
-                        pointer = details.globalPosition;
-                        paintAtPointer();
-                      }
-                      ..onEnd = (_) {
-                        finish();
-                      }
-                      ..onCancel = finish,
-                  ),
+    return Listener(
+      onPointerDown: widget.continueFromLongPress
+          ? (event) {
+              if (heldPointer != null) return;
+              heldPointer = event.pointer;
+              heldPath = pathAt(event.position);
+              heldSelected = heldPath != null && widget.isSelected(heldPath!);
+              pointer = event.position;
             }
-          : const {},
+          : null,
+      onPointerMove: (event) {
+        if (event.pointer != heldPointer) return;
+        pointer = event.position;
+        if (continuingHold) paintAtPointer();
+      },
+      onPointerUp: (event) {
+        if (event.pointer != heldPointer) return;
+        if (continuingHold) {
+          finish();
+        } else {
+          heldPointer = null;
+          heldPath = null;
+        }
+      },
+      onPointerCancel: (event) {
+        if (event.pointer == heldPointer) finish();
+      },
       child: widget.child,
     );
   }

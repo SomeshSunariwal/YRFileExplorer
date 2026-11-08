@@ -58,13 +58,15 @@ class WindowPanelTabs extends StatelessWidget {
                                         ? const Color(0xff454545)
                                         : Colors.white,
                                     borderRadius: BorderRadius.circular(15),
-                                    boxShadow: const [
-                                      BoxShadow(
-                                        color: Color(0x18000000),
-                                        blurRadius: 3,
-                                        offset: Offset(0, 1),
-                                      ),
-                                    ],
+                                    boxShadow: dark
+                                        ? null
+                                        : const [
+                                            BoxShadow(
+                                              color: Color(0x18000000),
+                                              blurRadius: 3,
+                                              offset: Offset(0, 1),
+                                            ),
+                                          ],
                                   ),
                                 ),
                               ),

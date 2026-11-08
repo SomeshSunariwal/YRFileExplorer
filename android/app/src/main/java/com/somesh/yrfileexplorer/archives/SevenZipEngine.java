@@ -2,12 +2,33 @@ package com.somesh.yrfileexplorer.archives;
 
 import com.somesh.yrfileexplorer.files.FileEngine;
 import com.somesh.yrfileexplorer.storage.FolderAnalyzer;
-import org.apache.commons.compress.archivers.sevenz.*;
-import java.io.*;
+import org.apache.commons.compress.archivers.sevenz.SevenZArchiveEntry;
+import org.apache.commons.compress.archivers.sevenz.SevenZFile;
+import org.apache.commons.compress.archivers.sevenz.SevenZMethod;
+import org.apache.commons.compress.archivers.sevenz.SevenZMethodConfiguration;
+import org.apache.commons.compress.archivers.sevenz.SevenZOutputFile;
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.channels.SeekableByteChannel;
-import java.nio.file.*;
+import java.nio.file.FileVisitResult;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 
 /** Offline 7z support. Extract only into a new directory; never overwrite files. */
 public final class SevenZipEngine {

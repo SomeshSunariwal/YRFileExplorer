@@ -21,8 +21,10 @@ import 'package:yr_file_explorer/features/workspace/presentation/widgets/explore
 import 'package:yr_file_explorer/features/workspace/presentation/widgets/explorer_pane.dart';
 import 'package:yr_file_explorer/features/workspace/presentation/widgets/explorer_bottom_bar.dart';
 import 'package:yr_file_explorer/shared/widgets/empty_state.dart';
+import 'package:yr_file_explorer/shared/widgets/drag_selection_region.dart';
 import 'package:yr_file_explorer/features/analysis/presentation/widgets/analysis_usage_row.dart';
 import 'package:yr_file_explorer/features/files/application/file_clipboard.dart';
+import 'package:yr_file_explorer/features/files/presentation/open_explorer_file.dart';
 import 'package:yr_file_explorer/shared/dialogs/input_dialogs.dart';
 
 class SdCardAnalyst extends StatefulWidget {
@@ -45,6 +47,8 @@ class _SdCardAnalystState extends State<SdCardAnalyst> {
   late String path;
   String id = '', sort = 'Size';
   final selected = <String>{};
+  final selectionKeys = <String, GlobalKey>{};
+  final listScroll = ScrollController();
   bool descending = true, scanning = true;
   Json? result, storage;
   final progressDialog = AnalysisProgressDialog();
@@ -68,6 +72,7 @@ class _SdCardAnalystState extends State<SdCardAnalyst> {
 
   @override
   void dispose() {
+    listScroll.dispose();
     progressDialog.dispose();
     subscription?.cancel();
     Native.call('cancelAnalysis', {'id': id});
@@ -155,6 +160,8 @@ class _SdCardAnalystState extends State<SdCardAnalyst> {
       descending: descending,
     );
     sortedResult = result;
+    final paths = entries.map((e) => e['path'] as String).toSet();
+    selectionKeys.removeWhere((path, _) => !paths.contains(path));
     cachedSort = sort;
     cachedDescending = descending;
     return sortedRows = entries;
@@ -247,6 +254,11 @@ class _SdCardAnalystState extends State<SdCardAnalyst> {
   @override
   Widget build(BuildContext context) {
     final entries = rows, total = (storage?['total'] as num? ?? 0).toDouble();
+    final session = ExplorerWorkspaceSession.instance;
+    final atStorageRoot =
+        session.storagePath(path) ==
+        session.storagePath(session.volumeFor(path)?['path'] ?? session.root);
+    final headerTitle = atStorageRoot ? 'Storage Analyzer' : baseName(path);
     final analyzedTotal = (result?['bytes'] as num? ?? 0).toDouble();
     final free = (storage?['free'] as num? ?? 0).toDouble().clamp(
       0.0,
@@ -289,11 +301,7 @@ class _SdCardAnalystState extends State<SdCardAnalyst> {
       onTitle: () => showStorageLocations(context, onSelect: go),
       title: selected.isNotEmpty
           ? Text('${selected.length}/${entries.length}')
-          : const Text(
-              'Storage Analyzer',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
+          : Text(headerTitle, maxLines: 1, overflow: TextOverflow.ellipsis),
       actions: selected.isNotEmpty
           ? [
               ExplorerAction(
@@ -389,49 +397,72 @@ class _SdCardAnalystState extends State<SdCardAnalyst> {
                           child: const Text('Refresh'),
                         ),
                       )
-                    : CustomScrollView(
-                        slivers: [
-                          SliverPadding(
-                            padding: EdgeInsets.fromLTRB(
-                              16,
-                              8,
-                              16,
-                              capacityBottom + capacityHeight + 16,
-                            ),
-                            sliver: SliverList.builder(
-                              itemCount: entries.length,
-                              itemBuilder: (_, i) {
-                                final e = entries[i];
-                                return Padding(
-                                  padding: EdgeInsets.only(
-                                    bottom: i == entries.length - 1 ? 0 : 6,
-                                  ),
-                                  child: AnalysisUsageRow(
-                                    entry: e,
-                                    total: analyzedTotal,
-                                    selected: selected.contains(e['path']),
-                                    selectionMode: selected.isNotEmpty,
-                                    onToggle: () => setState(
-                                      () => selected.contains(e['path'])
-                                          ? selected.remove(e['path'])
-                                          : selected.add(e['path']),
+                    : DragSelectionRegion(
+                        continueFromLongPress: true,
+                        enabled: selected.isNotEmpty,
+                        itemKeys: selectionKeys,
+                        scroll: listScroll,
+                        isSelected: selected.contains,
+                        onSelection: (path, value) => setState(() {
+                          value ? selected.add(path) : selected.remove(path);
+                        }),
+                        child: CustomScrollView(
+                          controller: listScroll,
+                          slivers: [
+                            SliverPadding(
+                              padding: EdgeInsets.fromLTRB(
+                                16,
+                                8,
+                                16,
+                                capacityBottom + capacityHeight + 16,
+                              ),
+                              sliver: SliverList.builder(
+                                itemCount: entries.length,
+                                itemBuilder: (_, i) {
+                                  final e = entries[i];
+                                  return Padding(
+                                    key: selectionKeys.putIfAbsent(
+                                      e['path'] as String,
+                                      GlobalKey.new,
                                     ),
-                                    onOpen: () => e['directory'] == true
-                                        ? go(e['path'])
-                                        : Native.call('open', {
-                                            'path': e['path'],
-                                          }).catchError((Object error) {
-                                            if (context.mounted) {
-                                              showError(context, error);
-                                            }
-                                            return null;
-                                          }),
-                                  ),
-                                );
-                              },
+                                    padding: EdgeInsets.only(
+                                      bottom: i == entries.length - 1 ? 0 : 6,
+                                    ),
+                                    child: AnalysisUsageRow(
+                                      entry: e,
+                                      total: analyzedTotal,
+                                      selected: selected.contains(e['path']),
+                                      selectionMode: selected.isNotEmpty,
+                                      onToggle: () => setState(
+                                        () => selected.contains(e['path'])
+                                            ? selected.remove(e['path'])
+                                            : selected.add(e['path']),
+                                      ),
+                                      onOpen: () async {
+                                        if (e['directory'] == true) {
+                                          go(e['path']);
+                                          return;
+                                        }
+                                        try {
+                                          await openExplorerFile(
+                                            context,
+                                            e,
+                                            nearby: entries,
+                                            recycle: widget.settings.recycle,
+                                          );
+                                        } catch (error) {
+                                          if (context.mounted) {
+                                            showError(context, error);
+                                          }
+                                        }
+                                      },
+                                    ),
+                                  );
+                                },
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
               ),
             ],
@@ -443,13 +474,15 @@ class _SdCardAnalystState extends State<SdCardAnalyst> {
             child: DecoratedBox(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(999),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: dark ? .24 : .12),
-                    blurRadius: 6,
-                    offset: const Offset(0, 1),
-                  ),
-                ],
+                boxShadow: dark
+                    ? null
+                    : [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: .12),
+                          blurRadius: 6,
+                          offset: const Offset(0, 1),
+                        ),
+                      ],
               ),
               child: Semantics(
                 label: total > 0

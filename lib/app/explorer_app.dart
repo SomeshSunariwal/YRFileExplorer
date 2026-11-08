@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:yr_file_explorer/core/theme/explorer_scroll_behavior.dart';
 
 import 'package:yr_file_explorer/app/theme/explorer_theme.dart';
 import 'package:yr_file_explorer/core/settings/app_settings.dart';
@@ -10,11 +11,13 @@ class YRExplorer extends StatelessWidget {
   static final _darkTheme = buildExplorerTheme(Brightness.dark);
   final AppSettings settings;
   const YRExplorer({super.key, required this.settings});
+
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: settings,
     builder: (_, child) => MaterialApp(
       title: 'YR File Explorer',
+      scrollBehavior: const ExplorerScrollBehavior(),
       debugShowCheckedModeBanner: false,
       theme: _lightTheme,
       darkTheme: _darkTheme,

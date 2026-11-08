@@ -234,6 +234,9 @@ class _ConnectionDialogState extends State<ConnectionDialog> {
                   'Encoding',
                   DropdownButtonFormField<String>(
                     initialValue: encoding,
+                    elevation: Theme.of(context).brightness == Brightness.dark
+                        ? 0
+                        : 8,
                     isExpanded: true,
                     style: TextStyle(
                       fontSize: 13,

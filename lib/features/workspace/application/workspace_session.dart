@@ -20,6 +20,7 @@ class ExplorerWindow {
   final bool recent, search;
   final Json? profile;
   final previewKey = GlobalKey();
+  final contentKey = GlobalKey();
   bool locked = false;
   bool split = false;
   String? url;
@@ -37,6 +38,9 @@ class ExplorerWindow {
     this.payload,
   });
   IconData get icon => switch (page) {
+    'private' => Icons.lock_outline,
+    'sharing' => Icons.wifi_tethering_rounded,
+    'sharing_history' => Icons.swap_horiz_rounded,
     'apps' => Icons.android,
     'network' || 'ftp' || 'webdav' => Icons.dns_outlined,
     'web' => Icons.public,
@@ -78,6 +82,8 @@ class ExplorerWindow {
   String get label => switch (page) {
     'analysis' => 'Storage Analyzer',
     'storage_analysis' => 'Folder Analysis',
+    'sharing' => 'Sharing',
+    'sharing_history' => 'Sharing History',
     _ =>
       page == 'files' &&
               profile == null &&
@@ -295,6 +301,22 @@ class ExplorerWorkspaceSession extends ChangeNotifier {
     return true;
   }
 
+  /// The Device tab is a real swipe destination from the first loaded frame.
+  /// Keep Homepage active while preparing it, unlike an explicit open action.
+  void ensureDeviceWindow() {
+    if (windows.any(
+      (window) =>
+          window.page == 'files' &&
+          window.profile == null &&
+          window.category == null &&
+          !window.recent,
+    )) {
+      return;
+    }
+    windows.insert(0, ExplorerWindow(++_nextId, root));
+    notifyListeners();
+  }
+
   void open(
     String path, {
     String page = 'files',
@@ -361,6 +383,9 @@ class ExplorerWorkspaceSession extends ChangeNotifier {
       page: page,
       url: url,
       title: switch (page) {
+        'private' => 'Private Space',
+        'sharing' => 'Sharing',
+        'sharing_history' => 'Sharing History',
         'apps' => 'APP',
         'network' => 'Network',
         'web' => 'Web',
@@ -418,11 +443,16 @@ class ExplorerWorkspaceSession extends ChangeNotifier {
 
   void setSplit(int id, bool enabled) {
     final window = windows.where((w) => w.id == id).firstOrNull;
-    if (window == null ||
-        window.page != 'files' ||
-        window.profile != null ||
-        window.category != null ||
-        window.recent) {
+    if (window == null) return;
+    final local =
+        window.page == 'files' &&
+        window.profile == null &&
+        window.category == null &&
+        !window.recent;
+    final ftp =
+        window.page == 'ftp' ||
+        const ['FTP', 'FTPS', 'SFTP'].contains(window.profile?['protocol']);
+    if (!local && !ftp) {
       return;
     }
     if (window.split == enabled) return;
