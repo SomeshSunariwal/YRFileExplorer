@@ -101,7 +101,8 @@ public class VideoViewerActivity extends Activity {
         playingBeforePause = state == null || state.getBoolean("playing", true);
         if (state != null) {
             int savedMode = state.getInt("displayMode", state.getBoolean("fill")
-                    ? DisplayMode.FULL_SCREEN.ordinal() : DisplayMode.FIT.ordinal());
+                    ? DisplayMode.FULL_SCREEN.ordinal()
+                    : DisplayMode.FIT.ordinal());
             displayMode = DisplayMode.values()[savedMode];
         }
         FrameLayout root = new FrameLayout(this);
@@ -158,7 +159,8 @@ public class VideoViewerActivity extends Activity {
             return insets;
         });
         setContentView(root);
-        // Installing the content view initializes the window's decor and insets controller.
+        // Installing the content view initializes the window's decor and insets
+        // controller.
         WindowInsetsController systemBars = window.getInsetsController();
         if (systemBars != null) {
             systemBars.setSystemBarsAppearance(0, WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
@@ -203,11 +205,14 @@ public class VideoViewerActivity extends Activity {
             seek.setEnabled(false);
             updatePlayButton();
             showControls(true);
-            AlertDialog dialog = new AlertDialog.Builder(this).setTitle("Playback unavailable")
-                    .setMessage("This video could not be played. Try another player.")
-                    .setPositiveButton("Open with", (d, w) -> external())
-                    .setNegativeButton("Close", (d, w) -> finish()).create();
-            ViewerUi.showDialog(dialog, dark);
+            boolean privatePreview = getIntent().getBooleanExtra("privateSpace", false);
+            AlertDialog.Builder dialog = new AlertDialog.Builder(this).setTitle("Playback unavailable")
+                    .setMessage(privatePreview ? "This video could not be played."
+                            : "This video could not be played. Try another player.")
+                    .setNegativeButton("Close", (d, w) -> finish());
+            if (!privatePreview)
+                dialog.setPositiveButton("Open with", (d, w) -> external());
+            ViewerUi.showDialog(dialog.create(), dark);
             return true;
         });
         video.setVideoURI(getIntent().getData());
@@ -310,7 +315,8 @@ public class VideoViewerActivity extends Activity {
     }
 
     private void showDisplayModes() {
-        if (displayMenu != null) return;
+        if (displayMenu != null)
+            return;
         boolean dark = ViewerUi.isDark(this);
         LinearLayout options = new LinearLayout(this);
         options.setOrientation(LinearLayout.VERTICAL);
@@ -424,7 +430,8 @@ public class VideoViewerActivity extends Activity {
 
     @Override
     protected void onPause() {
-        if (displayMenu != null) displayMenu.dismiss();
+        if (displayMenu != null)
+            displayMenu.dismiss();
         if (ready) {
             position = video.getCurrentPosition();
             playingBeforePause = video.isPlaying();

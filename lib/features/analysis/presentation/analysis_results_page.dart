@@ -319,8 +319,10 @@ class _AnalysisResultsPageState extends State<AnalysisResultsPage> {
                 enabled: !busy,
                 onTap: () {
                   if (selected.length != 1) return;
+                  final file = selected.single;
                   ExplorerWorkspaceSession.instance.open(
-                    parentPath(selected.single),
+                    parentPath(file),
+                    selectPath: file,
                   );
                 },
               ),

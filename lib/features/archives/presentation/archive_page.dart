@@ -51,6 +51,7 @@ class _ArchivePageState extends State<ArchivePage> {
       sort = 'Name';
   bool descending = false;
   bool loading = true, busy = false, grid = true;
+  int _loadVersion = 0;
   String? error;
   @override
   void initState() {
@@ -79,6 +80,7 @@ class _ArchivePageState extends State<ArchivePage> {
     'charset': charset,
   };
   Future<void> load({bool background = false}) async {
+    final version = ++_loadVersion;
     setState(() {
       if (!background) loading = true;
       error = null;
@@ -86,7 +88,7 @@ class _ArchivePageState extends State<ArchivePage> {
     });
     try {
       final result = await Native.rows('archiveList', args);
-      if (mounted) {
+      if (mounted && version == _loadVersion) {
         setState(() {
           rows = result;
           sortRows();
@@ -94,7 +96,7 @@ class _ArchivePageState extends State<ArchivePage> {
         });
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted && version == _loadVersion) {
         if (isSevenZip &&
             password.isEmpty &&
             e.toString().toLowerCase().contains('password')) {
@@ -104,7 +106,7 @@ class _ArchivePageState extends State<ArchivePage> {
             label: 'Password',
             secret: true,
           );
-          if (!mounted) return;
+          if (!mounted || version != _loadVersion) return;
           if (value != null && value.isNotEmpty) {
             password = value;
             await load();

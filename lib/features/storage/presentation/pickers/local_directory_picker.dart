@@ -88,15 +88,16 @@ Future<String?> chooseLocalDirectory(
                     final folders = snapshot.data!
                         .where((entry) => entry['directory'] == true)
                         .toList();
-                    return ListView(
-                      children: [
-                        for (final folder in folders)
-                          ListTile(
-                            leading: FileGlyph(folder, size: 32),
-                            title: Text(folder['name']),
-                            onTap: () => navigate(update, folder['path']),
-                          ),
-                      ],
+                    return ListView.builder(
+                      itemCount: folders.length,
+                      itemBuilder: (context, index) {
+                        final folder = folders[index];
+                        return ListTile(
+                          leading: FileGlyph(folder, size: 32),
+                          title: Text(folder['name']),
+                          onTap: () => navigate(update, folder['path']),
+                        );
+                      },
                     );
                   },
                 ),

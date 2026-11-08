@@ -16,7 +16,9 @@ import java.io.OutputStream;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/** Passes the original PDF to the spooler to preserve text and vector artwork. */
+/**
+ * Passes the original PDF to the spooler to preserve text and vector artwork.
+ */
 final class PdfPrintAdapter extends PrintDocumentAdapter {
     private final ContentResolver resolver;
     private final Uri source;
@@ -32,9 +34,10 @@ final class PdfPrintAdapter extends PrintDocumentAdapter {
                 .build();
     }
 
-    @Override public void onLayout(PrintAttributes oldAttributes, PrintAttributes newAttributes,
-                                   CancellationSignal cancellation, LayoutResultCallback callback,
-                                   Bundle extras) {
+    @Override
+    public void onLayout(PrintAttributes oldAttributes, PrintAttributes newAttributes,
+            CancellationSignal cancellation, LayoutResultCallback callback,
+            Bundle extras) {
         if (cancellation.isCanceled()) {
             callback.onLayoutCancelled();
         } else {
@@ -42,32 +45,38 @@ final class PdfPrintAdapter extends PrintDocumentAdapter {
         }
     }
 
-    @Override public void onWrite(PageRange[] pages, ParcelFileDescriptor destination,
-                                  CancellationSignal cancellation, WriteResultCallback callback) {
+    @Override
+    public void onWrite(PageRange[] pages, ParcelFileDescriptor destination,
+            CancellationSignal cancellation, WriteResultCallback callback) {
         worker.execute(() -> {
             try (OutputStream out = new ParcelFileDescriptor.AutoCloseOutputStream(destination);
-                 InputStream in = resolver.openInputStream(source)) {
-                if (in == null) throw new IOException("Missing PDF");
+                    InputStream in = resolver.openInputStream(source)) {
+                if (in == null)
+                    throw new IOException("Missing PDF");
                 byte[] buffer = new byte[64 * 1024];
                 int read;
                 while (!cancellation.isCanceled() && (read = in.read(buffer)) != -1) {
                     out.write(buffer, 0, read);
                 }
             } catch (IOException | SecurityException error) {
-                if (cancellation.isCanceled()) callback.onWriteCancelled();
-                else callback.onWriteFailed("Could not read the PDF");
+                if (cancellation.isCanceled())
+                    callback.onWriteCancelled();
+                else
+                    callback.onWriteFailed("Could not read the PDF");
                 return;
             }
             if (cancellation.isCanceled()) {
                 callback.onWriteCancelled();
             } else {
-                // Describe the pages actually supplied so the spooler can select the requested range.
-                callback.onWriteFinished(new PageRange[]{new PageRange(0, info.getPageCount() - 1)});
+                // Describe the pages actually supplied so the spooler can select the requested
+                // range.
+                callback.onWriteFinished(new PageRange[] { new PageRange(0, info.getPageCount() - 1) });
             }
         });
     }
 
-    @Override public void onFinish() {
+    @Override
+    public void onFinish() {
         worker.shutdown();
     }
 }

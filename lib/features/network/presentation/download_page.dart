@@ -10,6 +10,7 @@ import 'package:yr_file_explorer/core/platform/native_bridge.dart';
 import 'package:yr_file_explorer/core/settings/app_settings.dart';
 import 'package:yr_file_explorer/core/theme/file_categories.dart';
 import 'package:yr_file_explorer/core/utils/file_format.dart';
+import 'package:yr_file_explorer/features/files/presentation/open_explorer_file.dart';
 import 'package:yr_file_explorer/features/storage/presentation/pickers/local_directory_picker.dart';
 import 'package:yr_file_explorer/features/workspace/application/workspace_session.dart';
 import 'package:yr_file_explorer/features/workspace/presentation/dialogs/windows_dialog.dart';
@@ -136,7 +137,16 @@ class _DownloadPageState extends State<DownloadPage>
     }
     if (!mounted) return;
     try {
-      await Native.call(method, {'id': job['id']});
+      final args = {'id': job['id']};
+      if (method == 'openDownload') {
+        final media = await Native.call<Map>('downloadedMedia', args);
+        if (!mounted) return;
+        if (media != null) {
+          await openExplorerFile(context, Json.from(media), readOnly: true);
+          return;
+        }
+      }
+      await Native.call(method, args);
       await load();
     } catch (e) {
       if (mounted) showError(context, e);

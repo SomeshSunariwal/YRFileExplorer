@@ -6,9 +6,9 @@ import 'package:yr_file_explorer/core/models/json.dart';
 import 'package:yr_file_explorer/core/platform/native_bridge.dart';
 import 'package:yr_file_explorer/core/settings/app_settings.dart';
 import 'package:yr_file_explorer/core/theme/file_categories.dart';
-import 'package:yr_file_explorer/core/theme/explorer_style.dart';
 import 'package:yr_file_explorer/core/utils/file_format.dart';
 import 'package:yr_file_explorer/core/utils/file_sort.dart';
+import 'package:yr_file_explorer/features/files/presentation/open_explorer_file.dart';
 import 'package:yr_file_explorer/features/storage/presentation/pickers/local_directory_picker.dart';
 import 'package:yr_file_explorer/features/workspace/application/workspace_session.dart';
 import 'package:yr_file_explorer/features/workspace/presentation/dialogs/windows_dialog.dart';
@@ -38,6 +38,7 @@ class PrivateSpacePage extends StatefulWidget {
 
 class _PrivateSpacePageState extends State<PrivateSpacePage>
     with WidgetsBindingObserver {
+  static const _moveOut = 'Move Out';
   final session = ExplorerWorkspaceSession.instance;
   final selected = <String>{};
   final trail = <Json>[];
@@ -184,6 +185,7 @@ class _PrivateSpacePageState extends State<PrivateSpacePage>
 
   Future<void> operate(String name, List<Json> picks) async {
     if (busy || !unlocked) return;
+    final moveOut = name == _moveOut;
     final ids = picks.map((e) => e['id'] as String).toList();
     try {
       if (name == 'Copy' || name == 'Cut') {
@@ -219,7 +221,7 @@ class _PrivateSpacePageState extends State<PrivateSpacePage>
         return;
       }
       String? destination;
-      if (name == 'Remove from Private Space' || name == 'Copy to') {
+      if (moveOut || name == 'Copy to') {
         if (!await confirm(
           context,
           name,
@@ -251,12 +253,10 @@ class _PrivateSpacePageState extends State<PrivateSpacePage>
         name == 'Delete'
             ? 'Deleting private files…'
             : 'Processing private files…',
-        () =>
-            Native.call(name == 'Delete' ? 'privateDelete' : 'privateExport', {
-              'ids': ids,
-              'destination': ?destination,
-              'move': name == 'Remove from Private Space',
-            }),
+        () => Native.call(
+          name == 'Delete' ? 'privateDelete' : 'privateExport',
+          {'ids': ids, 'destination': ?destination, 'move': moveOut},
+        ),
       );
       if (mounted && unlocked) {
         selected.clear();
@@ -286,32 +286,15 @@ class _PrivateSpacePageState extends State<PrivateSpacePage>
     final request = generation;
     try {
       final file = await Native.call<String>('privatePreview', {'id': e['id']});
-      if (!mounted || request != generation || file == null) return;
-      if (e['category'] == 'Images') {
-        await Navigator.push(
-          context,
-          ExplorerPageRoute<void>(
-            builder: (_) => Scaffold(
-              backgroundColor: Colors.black,
-              appBar: AppBar(
-                title: Text(e['name']),
-                backgroundColor: Colors.black,
-                foregroundColor: Colors.white,
-              ),
-              body: Center(
-                child: InteractiveViewer(
-                  minScale: .5,
-                  maxScale: 5,
-                  child: Image.file(File(file), fit: BoxFit.contain),
-                ),
-              ),
-            ),
-          ),
-        );
-      } else if (e['category'] == 'Videos' ||
+      if (!mounted || request != generation || covered || file == null) return;
+      if (e['category'] == 'Images' ||
+          e['category'] == 'Videos' ||
           e['category'] == 'Music' ||
           file.toLowerCase().endsWith('.pdf')) {
-        await Native.call('open', {'path': file});
+        await openExplorerFile(context, {
+          ...e,
+          'path': file,
+        }, privatePreview: true);
       } else {
         if ((e['size'] as num) > 1024 * 1024 ||
             !RegExp(
@@ -343,7 +326,7 @@ class _PrivateSpacePageState extends State<PrivateSpacePage>
       'Cut',
       'Copy to',
       if (picks.length == 1) ...['Rename', 'Properties'],
-      'Remove from Private Space',
+      _moveOut,
       'Delete',
     ]);
     if (name != null && mounted) await operate(name, picks);
@@ -507,8 +490,8 @@ class _PrivateSpacePageState extends State<PrivateSpacePage>
               ),
               action(
                 Icons.lock_open_outlined,
-                'Remove',
-                () => operate('Remove from Private Space', picks),
+                _moveOut,
+                () => operate(_moveOut, picks),
               ),
               action(Icons.more_horiz, 'More', () => more(picks)),
             ]

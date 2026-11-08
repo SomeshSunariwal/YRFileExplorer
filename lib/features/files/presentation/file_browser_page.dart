@@ -123,12 +123,13 @@ class FileBrowserState extends State<FileBrowser> with WidgetsBindingObserver {
   String? _cachedSort;
   bool? _cachedDescending;
   final selected = <String>{};
+  String? locatedPath;
+  bool locatePending = false;
   final selectionKeys = <String, GlobalKey>{};
   final pickupIconKeys = <String, GlobalKey>{};
   final filesScroll = ScrollController();
   final selectionMenuAnchor = GlobalKey();
   final history = <String>[];
-  final future = <String>[];
   bool folderDragging = false, movingFolder = false;
   Set<String> draggedFolderPaths = {};
   bool loading = true,
@@ -153,6 +154,7 @@ class FileBrowserState extends State<FileBrowser> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     path = ExplorerWorkspaceSession.instance.storagePath(widget.path);
+    readLocationSelection();
     previousHidden = widget.settings.hidden;
     previousFolderSizes = widget.settings.folderSizes;
     widget.settings.addListener(settingsChanged);
@@ -230,13 +232,20 @@ class FileBrowserState extends State<FileBrowser> with WidgetsBindingObserver {
 
   Future<void> load({bool background = false}) async {
     final version = ++generation;
+    if (locatedPath != null && parentPath(locatedPath!) != path) {
+      locatedPath = null;
+      locatePending = false;
+    }
+    final target = virtual ? null : locatedPath;
+    final showHidden = widget.settings.hidden;
+    final revealTarget = target != null && baseName(target).startsWith('.');
     Native.call('cancelAnalysis', {'id': scanId});
     setState(() {
       if (!background) loading = true;
       refreshing = background;
       calculating = false;
       error = null;
-      selected.clear();
+      if (!background || !selected.contains(target)) selected.clear();
     });
     try {
       if (virtual) scanId = 'search-${DateTime.now().microsecondsSinceEpoch}';
@@ -249,12 +258,20 @@ class FileBrowserState extends State<FileBrowser> with WidgetsBindingObserver {
                   (searchType == 'All files' ? '' : searchType),
               'id': scanId,
               'recursive': query.isEmpty || deepSearch,
-              'hidden': widget.settings.hidden,
+              'hidden': showHidden,
             })
           : await Native.rows('list', {
               'path': path,
-              'hidden': widget.settings.hidden,
+              'hidden': showHidden || revealTarget,
+              'countItems': true,
             });
+      if (revealTarget && !showHidden) {
+        rows.removeWhere(
+          (row) =>
+              row['path'] != target &&
+              baseName(row['path'] as String).startsWith('.'),
+        );
+      }
       if (widget.recent) {
         rows.removeWhere((e) => e['directory'] == true);
         rows.sort(
@@ -263,6 +280,7 @@ class FileBrowserState extends State<FileBrowser> with WidgetsBindingObserver {
         rows = rows.take(200).toList();
       }
       if (!mounted || version != generation) return;
+      final selectTarget = locatePending && target != null;
       setState(() {
         entries = rows;
         _sortedEntries = null;
@@ -270,9 +288,22 @@ class FileBrowserState extends State<FileBrowser> with WidgetsBindingObserver {
         selectionKeys.removeWhere((path, _) => !paths.contains(path));
         pickupIconKeys.removeWhere((path, _) => !paths.contains(path));
         selected.retainAll(paths);
+        if (selectTarget) {
+          locatePending = false;
+          if (paths.contains(target)) selected.add(target);
+        }
         loading = false;
         refreshing = false;
       });
+      if (selectTarget && selected.contains(target)) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || version != generation || !selected.contains(target)) {
+            return;
+          }
+          final item = selectionKeys[target]?.currentContext;
+          if (item != null) Scrollable.ensureVisible(item, alignment: .5);
+        });
+      }
       if (widget.settings.folderSizes && !virtual) {
         await calculate(version);
       }
@@ -407,9 +438,19 @@ class FileBrowserState extends State<FileBrowser> with WidgetsBindingObserver {
     );
   }
 
+  void readLocationSelection() {
+    locatedPath = ExplorerWorkspaceSession.instance.takePendingSelection(
+      widget.windowId,
+    );
+    locatePending = locatedPath != null;
+  }
+
   void openLocation(String next, bool startSearch) {
     searchDebounce?.cancel();
     final hadQuery = query.isNotEmpty || deepSearch;
+    final hadLocatedPath = locatedPath != null;
+    readLocationSelection();
+    if (locatePending && lowerPaneActive) focusPane(false);
     searching = startSearch;
     query = '';
     deepSearch = false;
@@ -419,7 +460,7 @@ class FileBrowserState extends State<FileBrowser> with WidgetsBindingObserver {
       navigate(next);
     } else {
       setState(() {});
-      if (hadQuery) load();
+      if (hadQuery || hadLocatedPath || locatePending) load();
     }
   }
 
@@ -436,7 +477,6 @@ class FileBrowserState extends State<FileBrowser> with WidgetsBindingObserver {
       history.removeRange(previousVisit, history.length);
     }
     history.add(path);
-    future.clear();
     path = next;
     if (widget.windowId != null) {
       ExplorerWorkspaceSession.instance.updatePath(widget.windowId!, path);
@@ -459,7 +499,6 @@ class FileBrowserState extends State<FileBrowser> with WidgetsBindingObserver {
       (p) => !ExplorerWorkspaceSession.instance.containsStoragePath(p),
     );
     if (history.isNotEmpty) {
-      future.add(path);
       path = history.removeLast();
       if (widget.windowId != null) {
         ExplorerWorkspaceSession.instance.updatePath(widget.windowId!, path);
@@ -475,7 +514,6 @@ class FileBrowserState extends State<FileBrowser> with WidgetsBindingObserver {
       // Moving up after history is exhausted must not push this folder back
       // onto history, otherwise Back would bounce between child and parent.
       path = parentPath(path);
-      future.clear();
       if (widget.windowId != null) {
         ExplorerWorkspaceSession.instance.updatePath(widget.windowId!, path);
       }
@@ -1227,8 +1265,8 @@ class FileBrowserState extends State<FileBrowser> with WidgetsBindingObserver {
                               !widget.recent &&
                               ExplorerWorkspaceSession.instance.volumeFor(
                                     path,
-                                  )?['removable'] !=
-                                  true
+                                  )?['primary'] !=
+                                  false
                         ? null
                         : () {
                             if (widget.windowId != null) {
@@ -1415,28 +1453,29 @@ class FileBrowserState extends State<FileBrowser> with WidgetsBindingObserver {
   }
 
   Widget bottomToolbar() {
-    final picks = entries.where((e) => selected.contains(e['path'])).toList();
+    List<Json> picks() =>
+        entries.where((e) => selected.contains(e['path'])).toList();
     return ExplorerBottomBar(
       child: selected.isNotEmpty
           ? Row(
               children: [
-                _tool(Icons.copy, 'Copy', () => action('Copy', picks)),
-                _tool(Icons.content_cut, 'Cut', () => action('Cut', picks)),
+                _tool(Icons.copy, 'Copy', () => action('Copy', picks())),
+                _tool(Icons.content_cut, 'Cut', () => action('Cut', picks())),
                 _tool(
                   Icons.delete_outline,
                   'Delete',
-                  () => action('Delete', picks),
+                  () => action('Delete', picks()),
                 ),
                 _tool(
                   Icons.edit_outlined,
                   'Rename',
-                  () => action('Rename', picks),
+                  () => action('Rename', picks()),
                 ),
                 ExplorerAction(
                   key: selectionMenuAnchor,
                   icon: Icons.more_horiz,
                   label: 'More',
-                  onTap: () => showSelectionMenu(picks),
+                  onTap: () => showSelectionMenu(picks()),
                 ),
               ],
             )

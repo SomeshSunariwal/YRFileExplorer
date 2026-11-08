@@ -179,17 +179,21 @@ public class MediaViewerActivity extends Activity {
         syncVolume();
         volume.setPaddingRelative(Math.max(dp(22), seek.getPaddingStart()), 0, seek.getPaddingEnd(), 0);
         volume.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override public void onStartTrackingTouch(SeekBar bar) {
+            @Override
+            public void onStartTrackingTouch(SeekBar bar) {
                 adjustingVolume = true;
             }
 
-            @Override public void onStopTrackingTouch(SeekBar bar) {
+            @Override
+            public void onStopTrackingTouch(SeekBar bar) {
                 adjustingVolume = false;
                 syncVolume();
             }
 
-            @Override public void onProgressChanged(SeekBar bar, int value, boolean fromUser) {
-                if (!fromUser) return;
+            @Override
+            public void onProgressChanged(SeekBar bar, int value, boolean fromUser) {
+                if (!fromUser)
+                    return;
                 try {
                     mediaVolume.setStreamVolume(MEDIA_STREAM, value, 0);
                 } catch (SecurityException ignored) {
@@ -563,7 +567,11 @@ public class MediaViewerActivity extends Activity {
         if (path == null || path.isEmpty())
             return;
         ArrayList<String> files = getIntent().getStringArrayListExtra("playlist");
-        audio.load(files, path);
+        audio.load(files, path, privatePreview());
+    }
+
+    private boolean privatePreview() {
+        return getIntent().getBooleanExtra("privateSpace", false);
     }
 
     @Override
@@ -722,6 +730,10 @@ public class MediaViewerActivity extends Activity {
         int[] icons = { R.drawable.ic_music_queue, R.drawable.ic_music_save, R.drawable.ic_music_open,
                 R.drawable.ic_music_stop };
         for (int i = 0; i < names.length; i++) {
+            if (privatePreview() && (i == 1 || i == 2))
+                continue;
+            if (i > 0)
+                divider(box);
             final int choice = i;
             LinearLayout item = row();
             item.setPadding(dp(12), 0, dp(18), 0);
@@ -745,8 +757,6 @@ public class MediaViewerActivity extends Activity {
                 }
             });
             box.addView(item, new LinearLayout.LayoutParams(-1, dp(48)));
-            if (i < names.length - 1)
-                divider(box);
         }
         showDialog(dialog, box);
     }
@@ -828,7 +838,7 @@ public class MediaViewerActivity extends Activity {
     protected void onStop() {
         if (audio != null)
             audio.listener = null;
-        if (!backgroundPlaybackEnabled() && !isChangingConfigurations())
+        if ((privatePreview() || !backgroundPlaybackEnabled()) && !isChangingConfigurations())
             stopService(new Intent(this, AudioPlaybackService.class));
         if (bound) {
             unbindService(connection);

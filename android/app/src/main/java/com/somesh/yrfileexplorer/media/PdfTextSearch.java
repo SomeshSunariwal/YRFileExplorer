@@ -18,7 +18,8 @@ import java.util.function.BooleanSupplier;
 
 /** Finds embedded PDF text and returns bounds relative to each page's size. */
 final class PdfTextSearch {
-    record Match(int page, List<RectF> bounds) {}
+    record Match(int page, List<RectF> bounds) {
+    }
 
     static boolean isAvailable() {
         return Build.VERSION.SDK_INT >= 35
@@ -36,7 +37,7 @@ final class PdfTextSearch {
             throws IOException {
         List<Match> matches = new ArrayList<>();
         try (ParcelFileDescriptor descriptor = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY);
-             PdfRenderer pdf = new PdfRenderer(descriptor)) {
+                PdfRenderer pdf = new PdfRenderer(descriptor)) {
             for (int i = 0; i < pdf.getPageCount() && !cancelled.getAsBoolean(); i++) {
                 try (PdfRenderer.Page page = pdf.openPage(i)) {
                     append(matches, i, page.searchText(query), page.getWidth(), page.getHeight());
@@ -52,7 +53,7 @@ final class PdfTextSearch {
             throws IOException {
         List<Match> matches = new ArrayList<>();
         try (ParcelFileDescriptor descriptor = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY);
-             PdfRendererPreV pdf = new PdfRendererPreV(descriptor)) {
+                PdfRendererPreV pdf = new PdfRendererPreV(descriptor)) {
             for (int i = 0; i < pdf.getPageCount() && !cancelled.getAsBoolean(); i++) {
                 try (PdfRendererPreV.Page page = pdf.openPage(i)) {
                     append(matches, i, page.searchText(query), page.getWidth(), page.getHeight());
@@ -64,14 +65,15 @@ final class PdfTextSearch {
 
     @SuppressLint("NewApi")
     private static void append(List<Match> output, int page, List<PageMatchBounds> matches,
-                               float width, float height) {
+            float width, float height) {
         for (PageMatchBounds match : matches) {
             List<RectF> bounds = new ArrayList<>();
             for (RectF rect : match.getBounds()) {
                 bounds.add(new RectF(rect.left / width, rect.top / height,
                         rect.right / width, rect.bottom / height));
             }
-            if (!bounds.isEmpty()) output.add(new Match(page, bounds));
+            if (!bounds.isEmpty())
+                output.add(new Match(page, bounds));
         }
     }
 }

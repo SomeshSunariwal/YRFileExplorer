@@ -22,7 +22,7 @@ class SettingsPage extends StatelessWidget {
       final volumes = await Native.rows('volumes');
       final primaryPath =
           volumes
-                  .where((volume) => volume['removable'] != true)
+                  .where((volume) => volume['primary'] == true)
                   .firstOrNull?['path']
               as String?;
       final current = settings.sharingReceiveFolder ?? defaultPath;

@@ -58,7 +58,7 @@ public class PdfReaderActivity extends Activity {
     private final ExecutorService searchWorker = Executors.newSingleThreadExecutor();
     private final Handler searchHandler = new Handler(Looper.getMainLooper());
     private PdfRenderer renderer;
-    private File temporary;
+    private File sourceFile;
     private PdfZoomView zoomSurface;
     private android.widget.ListView document;
     private float[] pageRatios;
@@ -185,22 +185,30 @@ public class PdfReaderActivity extends Activity {
         setLoading(true);
         worker.execute(() -> {
             try {
-                // Copy URI streams to a private seekable file; providers may return pipes.
-                temporary = File.createTempFile("yr-pdf-", ".pdf", getCacheDir());
-                try (InputStream input = getContentResolver().openInputStream(getIntent().getData());
-                        FileOutputStream output = new FileOutputStream(temporary)) {
-                    if (input == null)
-                        throw new java.io.IOException("Cannot read this PDF");
-                    byte[] buffer = new byte[65536];
-                    int n;
-                    while ((n = input.read(buffer)) != -1) {
-                        if (closed)
-                            return;
-                        output.write(buffer, 0, n);
+                if (privateDocument) {
+                    // The vault already created a seekable preview that it deletes on lock.
+                    sourceFile = new File(getIntent().getData().getQueryParameter("path"));
+                } else {
+                    // Document providers can return streams that cannot seek.
+                    sourceFile = File.createTempFile("yr-pdf-", ".pdf", getCacheDir());
+                    try (InputStream input = getContentResolver().openInputStream(getIntent().getData());
+                            FileOutputStream output = new FileOutputStream(sourceFile)) {
+                        if (input == null)
+                            throw new java.io.IOException("Cannot read this PDF");
+                        byte[] buffer = new byte[65536];
+                        int n;
+                        while ((n = input.read(buffer)) != -1) {
+                            if (closed)
+                                return;
+                            output.write(buffer, 0, n);
+                        }
                     }
                 }
-                ParcelFileDescriptor descriptor = ParcelFileDescriptor.open(temporary,
-                        ParcelFileDescriptor.MODE_READ_ONLY);
+                ParcelFileDescriptor descriptor = privateDocument
+                        ? getContentResolver().openFileDescriptor(getIntent().getData(), "r")
+                        : ParcelFileDescriptor.open(sourceFile, ParcelFileDescriptor.MODE_READ_ONLY);
+                if (descriptor == null)
+                    throw new java.io.IOException("Cannot read this PDF");
                 try {
                     renderer = new PdfRenderer(descriptor);
                 } catch (Exception error) {
@@ -382,7 +390,7 @@ public class PdfReaderActivity extends Activity {
         if (query.isEmpty() || closed || loading || count == 0)
             return;
 
-        File source = temporary;
+        File source = sourceFile;
         searchHandler.postDelayed(() -> searchWorker.execute(() -> {
             if (closed || generation != searchGeneration)
                 return;
@@ -749,8 +757,8 @@ public class PdfReaderActivity extends Activity {
         worker.execute(() -> {
             if (renderer != null)
                 renderer.close();
-            if (temporary != null)
-                temporary.delete();
+            if (!privateDocument && sourceFile != null)
+                sourceFile.delete();
         });
         worker.shutdown();
         super.onDestroy();
