@@ -12,6 +12,7 @@ import android.graphics.Color;
 import android.graphics.Insets;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.media.AudioManager;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
@@ -48,6 +49,7 @@ import java.util.Locale;
  */
 public class MediaViewerActivity extends Activity {
     private static final int CYAN = 0xff0ba5c6;
+    private static final int MEDIA_STREAM = AudioManager.STREAM_MUSIC;
     private int canvas = 0xfff3f6fa, surface = Color.WHITE, ink = 0xff1c2938, muted = 0xff718092, line = 0xffdce2e8,
             tint = 0xffe6f5fa;
     private Typeface regularFont, mediumFont;
@@ -66,13 +68,16 @@ public class MediaViewerActivity extends Activity {
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private AudioPlaybackService audio;
+    private AudioManager mediaVolume;
     private boolean bound, seeking, queueVisible, resumed, dark;
-    private TextView header, title, artist, status, elapsed, duration, playingTab, playlistTab;
+    private boolean adjustingVolume;
+    private TextView title, artist, status, elapsed, duration, playingTab, playlistTab;
     private ImageButton play, shuffle, repeat;
+    private boolean displayedShuffle;
     private int displayedRepeat = -1;
     private ImageView artwork, placeholder;
     private Bitmap displayedArtwork;
-    private SeekBar seek;
+    private SeekBar seek, volume;
     private AudioWaveformView waveform;
     private ProgressBar loading;
     private MusicPager pages;
@@ -148,9 +153,69 @@ public class MediaViewerActivity extends Activity {
         view.setTypeface(playerFont(true));
     }
 
+    private SeekBar playerSlider(String label) {
+        SeekBar slider = new SeekBar(this);
+        slider.setContentDescription(label);
+        slider.setProgressTintList(ColorStateList.valueOf(CYAN));
+        slider.setThumbTintList(ColorStateList.valueOf(CYAN));
+        slider.setProgressBackgroundTintList(ColorStateList.valueOf(line));
+        slider.setOnTouchListener((v, event) -> {
+            if (event.getActionMasked() == MotionEvent.ACTION_DOWN)
+                v.getParent().requestDisallowInterceptTouchEvent(true);
+            return false;
+        });
+        return slider;
+    }
+
+    private View volumeRow() {
+        FrameLayout row = new FrameLayout(this);
+        volume = playerSlider("Media volume");
+        GradientDrawable thumb = shape(CYAN, 5, false);
+        thumb.setSize(dp(10), dp(10));
+        volume.setThumb(thumb);
+        volume.setMin(mediaVolume.getStreamMinVolume(MEDIA_STREAM));
+        volume.setMax(mediaVolume.getStreamMaxVolume(MEDIA_STREAM));
+        volume.setEnabled(!mediaVolume.isVolumeFixed());
+        syncVolume();
+        volume.setPaddingRelative(Math.max(dp(22), seek.getPaddingStart()), 0, seek.getPaddingEnd(), 0);
+        volume.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onStartTrackingTouch(SeekBar bar) {
+                adjustingVolume = true;
+            }
+
+            @Override public void onStopTrackingTouch(SeekBar bar) {
+                adjustingVolume = false;
+                syncVolume();
+            }
+
+            @Override public void onProgressChanged(SeekBar bar, int value, boolean fromUser) {
+                if (!fromUser) return;
+                try {
+                    mediaVolume.setStreamVolume(MEDIA_STREAM, value, 0);
+                } catch (SecurityException ignored) {
+                    // Android can reject changes under the current audio policy.
+                }
+                syncVolume();
+            }
+        });
+        row.addView(volume, new FrameLayout.LayoutParams(-1, -1));
+        ImageView speaker = new ImageView(this);
+        speaker.setImageResource(R.drawable.ic_music_volume);
+        speaker.setColorFilter(muted);
+        speaker.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        row.addView(speaker, new FrameLayout.LayoutParams(dp(16), dp(16), Gravity.START | Gravity.CENTER_VERTICAL));
+        return row;
+    }
+
+    private void syncVolume() {
+        if (!adjustingVolume)
+            volume.setProgress(mediaVolume.getStreamVolume(MEDIA_STREAM));
+    }
+
     @Override
     public void onCreate(Bundle state) {
         super.onCreate(state);
+        mediaVolume = getSystemService(AudioManager.class);
         dark = ViewerUi.isDark(this);
         if (dark) {
             canvas = 0xff292929;
@@ -173,14 +238,12 @@ public class MediaViewerActivity extends Activity {
             return insets;
         });
         LinearLayout toolbar = row();
-        toolbar.setPadding(dp(4), 0, dp(4), 0);
+        toolbar.setPadding(dp(4), dp(4), dp(4), dp(4));
         toolbar.addView(icon(R.drawable.ic_viewer_back, "Back", this::finish));
-        header = text("Now playing", 16, ink);
-        bold(header);
-        header.setGravity(Gravity.CENTER);
-        toolbar.addView(header, new LinearLayout.LayoutParams(0, dp(52), 1));
-        toolbar.addView(icon(R.drawable.ic_music_more, "More", this::menu));
-        root.addView(toolbar, new LinearLayout.LayoutParams(-1, dp(52)));
+        FrameLayout tabSlot = new FrameLayout(this);
+        toolbar.addView(tabSlot, new LinearLayout.LayoutParams(0, -1, 1));
+        toolbar.addView(icon(R.drawable.ic_viewer_more, "Music options", this::menu));
+        root.addView(toolbar, new LinearLayout.LayoutParams(-1, dp(56)));
 
         pages = new MusicPager();
         root.addView(pages, new LinearLayout.LayoutParams(-1, 0, 1));
@@ -231,14 +294,11 @@ public class MediaViewerActivity extends Activity {
         playing.addView(status, new LinearLayout.LayoutParams(-1, -2));
         space(playing, 16);
         FrameLayout progress = new FrameLayout(this);
-        seek = new SeekBar(this);
-        seek.setProgressTintList(ColorStateList.valueOf(CYAN));
-        seek.setThumbTintList(ColorStateList.valueOf(CYAN));
-        seek.setProgressBackgroundTintList(ColorStateList.valueOf(line));
+        seek = playerSlider("Playback position");
         progress.addView(seek, new FrameLayout.LayoutParams(-1, dp(32)));
         waveform = new AudioWaveformView(this);
         waveform.setPadding(seek.getPaddingLeft(), 0, seek.getPaddingRight(), 0);
-        playing.addView(waveform, new LinearLayout.LayoutParams(-1, dp(22)));
+        playing.addView(waveform, new LinearLayout.LayoutParams(-1, dp(100)));
         loading = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
         loading.setIndeterminate(true);
         loading.setIndeterminateTintList(ColorStateList.valueOf(CYAN));
@@ -254,12 +314,8 @@ public class MediaViewerActivity extends Activity {
         times.addView(elapsed, new LinearLayout.LayoutParams(0, dp(20), 1));
         times.addView(duration, new LinearLayout.LayoutParams(0, dp(20), 1));
         playing.addView(times);
-        space(playing, 12);
-        seek.setOnTouchListener((v, event) -> {
-            if (event.getActionMasked() == MotionEvent.ACTION_DOWN)
-                v.getParent().requestDisallowInterceptTouchEvent(true);
-            return false;
-        });
+        playing.addView(volumeRow(), new LinearLayout.LayoutParams(dp(176), dp(48)));
+        space(playing, 4);
         seek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             public void onStartTrackingTouch(SeekBar bar) {
                 seeking = true;
@@ -281,12 +337,13 @@ public class MediaViewerActivity extends Activity {
         });
         LinearLayout controls = row();
         controls.setGravity(Gravity.CENTER);
-        shuffle = icon(R.drawable.ic_music_shuffle, "Shuffle off", () -> {
+        shuffle = icon(R.drawable.ic_music_shuffle_off, "Shuffle off", () -> {
             if (audio != null) {
                 audio.shuffle = !audio.shuffle;
                 update();
             }
         });
+        shuffle.setColorFilter(muted);
         controls.addView(shuffle, new LinearLayout.LayoutParams(0, dp(48), 1));
         controls.addView(icon(R.drawable.ic_music_previous, "Previous", () -> {
             if (audio != null)
@@ -312,6 +369,7 @@ public class MediaViewerActivity extends Activity {
                 update();
             }
         });
+        repeat.setColorFilter(muted);
         controls.addView(repeat, new LinearLayout.LayoutParams(0, dp(48), 1));
         controls.setPadding(dp(8), dp(8), dp(8), dp(8));
         controls.setBackground(shape(surface, 36, true));
@@ -335,7 +393,13 @@ public class MediaViewerActivity extends Activity {
             }
         });
         pages.addPage(queue);
-        tabTrack = new FrameLayout(this);
+        tabTrack = new FrameLayout(this) {
+            @Override
+            protected void onMeasure(int widthSpec, int heightSpec) {
+                int width = resolveSize(dp(228), widthSpec);
+                super.onMeasure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY), heightSpec);
+            }
+        };
         tabTrack.setBackground(shape(canvas, 20, true));
         tabIndicator = new View(this);
         tabIndicator.setBackground(shape(surface, 16, true));
@@ -351,10 +415,7 @@ public class MediaViewerActivity extends Activity {
         FrameLayout.LayoutParams navigationInner = new FrameLayout.LayoutParams(-1, -1);
         navigationInner.setMargins(dp(4), dp(4), dp(4), dp(4));
         tabTrack.addView(navigation, navigationInner);
-        LinearLayout.LayoutParams navigationParams = new LinearLayout.LayoutParams(dp(228), dp(36));
-        navigationParams.gravity = Gravity.CENTER_HORIZONTAL;
-        navigationParams.setMargins(0, dp(8), 0, dp(4));
-        root.addView(tabTrack, 0, navigationParams);
+        tabSlot.addView(tabTrack, new FrameLayout.LayoutParams(-2, dp(36), Gravity.CENTER));
         tabTrack.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
             int slot = (r - l - dp(8)) / 2;
             if (tabIndicator.getLayoutParams().width != slot) {
@@ -405,7 +466,6 @@ public class MediaViewerActivity extends Activity {
         fraction = Math.max(0, Math.min(1, fraction));
         tabIndicator.setTranslationX(tabIndicator.getLayoutParams().width * fraction);
         queueVisible = fraction >= .5f;
-        header.setText(queueVisible ? "Playlist" : "Now playing");
         waveform.setActive(resumed && !queueVisible);
         playingTab.setTextColor(queueVisible ? muted : CYAN);
         playlistTab.setTextColor(queueVisible ? CYAN : muted);
@@ -537,6 +597,7 @@ public class MediaViewerActivity extends Activity {
             elapsed.setText(time(position));
         }
         waveform.update(audio == null ? null : audio.current(), length, position, active && !seeking);
+        syncVolume();
         if (audio == null)
             return;
         title.setText(audio.title());
@@ -550,14 +611,16 @@ public class MediaViewerActivity extends Activity {
             displayedArtwork = audio.artwork;
             artwork.setImageBitmap(displayedArtwork);
         }
-        shuffle.setColorFilter(audio.shuffle ? CYAN : muted);
-        shuffle.setBackground(shape(audio.shuffle ? tint : Color.TRANSPARENT, 24, false));
-        shuffle.setContentDescription(audio.shuffle ? "Shuffle on" : "Shuffle off");
+        if (displayedShuffle != audio.shuffle) {
+            displayedShuffle = audio.shuffle;
+            shuffle.setImageResource(displayedShuffle ? R.drawable.ic_music_shuffle : R.drawable.ic_music_shuffle_off);
+            shuffle.setColorFilter(displayedShuffle ? CYAN : muted);
+            shuffle.setContentDescription(displayedShuffle ? "Shuffle on" : "Shuffle off");
+        }
         if (displayedRepeat != audio.repeat) {
             displayedRepeat = audio.repeat;
             repeat.setImageResource(audio.repeat == 2 ? R.drawable.ic_music_repeat_one : R.drawable.ic_music_repeat);
             repeat.setColorFilter(audio.repeat == 0 ? muted : CYAN);
-            repeat.setBackground(shape(audio.repeat == 0 ? Color.TRANSPARENT : tint, 24, false));
             repeat.setContentDescription(
                     audio.repeat == 2 ? "Repeat one" : audio.repeat == 1 ? "Repeat all" : "Repeat off");
         }
@@ -778,6 +841,7 @@ public class MediaViewerActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        setVolumeControlStream(MEDIA_STREAM);
         resumed = true;
         waveform.setActive(!queueVisible);
         handler.removeCallbacks(ticker);
@@ -787,6 +851,7 @@ public class MediaViewerActivity extends Activity {
     @Override
     protected void onPause() {
         resumed = false;
+        adjustingVolume = false;
         waveform.setActive(false);
         handler.removeCallbacks(ticker);
         super.onPause();

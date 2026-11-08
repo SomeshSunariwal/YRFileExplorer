@@ -45,6 +45,7 @@ public class AudioPlaybackService extends Service {
     private AudioManager audioManager;
     private AudioFocusRequest focus;
     private MediaSession session;
+    private float focusGain = 1f;
     private boolean resumeOnFocus;
     private final Random random=new Random();
     public class LocalBinder extends Binder {AudioPlaybackService service(){return AudioPlaybackService.this;}}
@@ -56,8 +57,18 @@ public class AudioPlaybackService extends Service {
             @Override public void onPlay(){play();}@Override public void onPause(){pause();}@Override public void onSkipToNext(){next(1);}@Override public void onSkipToPrevious(){next(-1);}@Override public void onSeekTo(long p){seek((int)p);}@Override public void onStop(){stopSelf();}
         });session.setActive(true);
         focus=new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN).setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build()).setOnAudioFocusChangeListener(change->{
-            if(change==AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK){if(prepared)player.setVolume(.2f,.2f);}
-            else if(change==AudioManager.AUDIOFOCUS_GAIN){if(prepared){player.setVolume(1,1);if(resumeOnFocus){resumeOnFocus=false;play();}}}
+            if (change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) {
+                focusGain = .2f;
+                applyVolume();
+            }
+            else if (change == AudioManager.AUDIOFOCUS_GAIN) {
+                focusGain = 1f;
+                applyVolume();
+                if (prepared && resumeOnFocus) {
+                    resumeOnFocus = false;
+                    play();
+                }
+            }
             else{resumeOnFocus=change==AudioManager.AUDIOFOCUS_LOSS_TRANSIENT&&playing();pause();}
         }).build();
         if(Build.VERSION.SDK_INT>=33)registerReceiver(noisy,new IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY),Context.RECEIVER_NOT_EXPORTED);else registerReceiver(noisy,new IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY));
@@ -81,11 +92,16 @@ public class AudioPlaybackService extends Service {
     public int position(){try{return prepared?player.getCurrentPosition():0;}catch(IllegalStateException ignored){return 0;}}
     public int duration(){try{return prepared?player.getDuration():0;}catch(IllegalStateException ignored){return 0;}}
     public void seek(int value){if(prepared){player.seekTo(Math.max(0,Math.min(value,duration())));publish();}}
+    private void applyVolume() {
+        if (!prepared || player == null) return;
+        player.setVolume(focusGain, focusGain);
+    }
+
     public void play(){
         if(!prepared || player == null) return;
         try {
             if(audioManager.requestAudioFocus(focus) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
-                error=null; player.start();
+                error=null; applyVolume(); player.start();
             } else error="Audio is in use. Tap Play to try again.";
         } catch(IllegalStateException ex) { error="Playback stopped. Tap Play to retry."; prepared=false; }
         publish();

@@ -17,8 +17,7 @@ class AppSettings extends ChangeNotifier {
   bool groupDescending = false;
   bool backgroundPlayback = false;
   String? sharingReceiveFolder;
-  String get sharingReceiveFolderLabel =>
-      sharingReceiveFolder ?? 'Download/YR Sharing';
+  String get sharingReceiveFolderLabel => sharingReceiveFolder ?? 'Download';
   String viewMode = 'Medium Icon';
   bool descending = false;
   List<String> favorites = [], trees = [];

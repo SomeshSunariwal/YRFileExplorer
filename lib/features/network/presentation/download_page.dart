@@ -10,6 +10,7 @@ import 'package:yr_file_explorer/core/platform/native_bridge.dart';
 import 'package:yr_file_explorer/core/settings/app_settings.dart';
 import 'package:yr_file_explorer/core/theme/file_categories.dart';
 import 'package:yr_file_explorer/core/utils/file_format.dart';
+import 'package:yr_file_explorer/features/storage/presentation/pickers/local_directory_picker.dart';
 import 'package:yr_file_explorer/features/workspace/application/workspace_session.dart';
 import 'package:yr_file_explorer/features/workspace/presentation/dialogs/windows_dialog.dart';
 import 'package:yr_file_explorer/features/workspace/presentation/widgets/explorer_action.dart';
@@ -108,6 +109,7 @@ class _DownloadPageState extends State<DownloadPage>
       builder: (_) => _DownloadForm(
         initial: initial ?? '',
         folder: '${ExplorerWorkspaceSession.instance.root}/Download',
+        hidden: widget.settings.hidden,
       ),
     );
     if (args == null || !mounted) return;
@@ -285,19 +287,24 @@ class _DownloadPageState extends State<DownloadPage>
 
 class _DownloadForm extends StatefulWidget {
   final String initial, folder;
-  const _DownloadForm({required this.initial, required this.folder});
+  final bool hidden;
+  const _DownloadForm({
+    required this.initial,
+    required this.folder,
+    required this.hidden,
+  });
   @override
   State<_DownloadForm> createState() => _DownloadFormState();
 }
 
 class _DownloadFormState extends State<_DownloadForm> {
   final form = GlobalKey<FormState>();
-  late TextEditingController url, name, folder;
+  final destination = GlobalKey<FormFieldState<String>>();
+  late TextEditingController url, name;
   @override
   void initState() {
     super.initState();
     url = TextEditingController(text: widget.initial);
-    folder = TextEditingController(text: widget.folder);
     final uri = Uri.tryParse(widget.initial);
     name = TextEditingController(text: uri?.pathSegments.lastOrNull ?? '');
   }
@@ -306,7 +313,6 @@ class _DownloadFormState extends State<_DownloadForm> {
   void dispose() {
     url.dispose();
     name.dispose();
-    folder.dispose();
     super.dispose();
   }
 
@@ -315,9 +321,21 @@ class _DownloadFormState extends State<_DownloadForm> {
       Navigator.pop(context, {
         'url': url.text.trim(),
         'name': name.text.trim(),
-        'path': folder.text.trim(),
+        'path': destination.currentState!.value!,
       });
     }
+  }
+
+  Future<void> chooseDestination(FormFieldState<String> field) async {
+    FocusManager.instance.primaryFocus?.unfocus();
+    final workspace = ExplorerWorkspaceSession.instance;
+    final selected = await chooseLocalDirectory(
+      context,
+      initialPath: field.value!,
+      hidden: widget.hidden,
+      volumes: workspace.volumes,
+    );
+    if (field.mounted && selected != null) field.didChange(selected);
   }
 
   @override
@@ -375,18 +393,45 @@ class _DownloadFormState extends State<_DownloadForm> {
                     : null,
               ),
               const SizedBox(height: 12),
-              TextFormField(
-                controller: folder,
-                decoration: const InputDecoration(
-                  labelText: 'Destination folder',
-                ),
-                validator: (v) =>
-                    v != null &&
-                        ExplorerWorkspaceSession.instance.containsStoragePath(
-                          v.trim(),
-                        )
+              FormField<String>(
+                key: destination,
+                initialValue: widget.folder,
+                validator: (path) =>
+                    path != null &&
+                        ExplorerWorkspaceSession.instance.volumeFor(path) !=
+                            null
                     ? null
-                    : 'Choose a folder in internal storage or SD card',
+                    : 'Choose a folder on connected storage',
+                builder: (field) => Semantics(
+                  button: true,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () => chooseDestination(field),
+                    child: InputDecorator(
+                      decoration: InputDecoration(
+                        labelText: 'Destination folder',
+                        errorText: field.errorText,
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              field.value!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          const Icon(
+                            Icons.folder_open_outlined,
+                            size: 20,
+                            color: primaryBlue,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               ),
             ],
           ),

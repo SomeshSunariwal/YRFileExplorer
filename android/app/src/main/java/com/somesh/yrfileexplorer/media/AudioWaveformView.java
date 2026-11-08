@@ -135,7 +135,7 @@ final class AudioWaveformView extends View {
         float stride = (float) width / BANDS;
         float halfBar = Math.max(.5f, stride * .23f);
         float baseline = getHeight() - density;
-        float minHeight = 1.5f * density;
+        float minHeight = 2f * density;
         float heightRange = Math.max(0, baseline - density - minHeight);
         long elapsed = playing && active ? SystemClock.elapsedRealtime() - updatedAt : 0;
         float playhead = Math.min(duration, position + Math.min(elapsed, 550));
@@ -150,7 +150,9 @@ final class AudioWaveformView extends View {
                 float current = levels[index + band];
                 level = current + (levels[index + BANDS + band] - current) * fraction;
             }
-            float height = minHeight + heightRange * level;
+            // Lift quiet bands while keeping silence and full-scale peaks anchored.
+            float displayLevel = (float) Math.sqrt(level);
+            float height = minHeight + heightRange * displayLevel;
             float x = getPaddingLeft() + (band + .5f) * stride;
             float radius = Math.min(halfBar, density);
             canvas.drawRoundRect(x - halfBar, baseline - height, x + halfBar, baseline,

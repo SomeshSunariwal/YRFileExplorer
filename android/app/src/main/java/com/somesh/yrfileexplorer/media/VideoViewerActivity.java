@@ -23,6 +23,7 @@ import android.view.WindowInsetsController;
 import android.widget.FrameLayout;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
+import android.widget.PopupWindow;
 import android.widget.ProgressBar;
 import android.widget.SeekBar;
 import android.widget.TextView;
@@ -35,6 +36,7 @@ import static com.somesh.yrfileexplorer.media.ViewerUi.CYAN;
 import static com.somesh.yrfileexplorer.media.ViewerUi.dp;
 import static com.somesh.yrfileexplorer.media.ViewerUi.iconButton;
 import static com.somesh.yrfileexplorer.media.ViewerUi.row;
+import static com.somesh.yrfileexplorer.media.ViewerUi.rounded;
 import static com.somesh.yrfileexplorer.media.ViewerUi.text;
 
 /**
@@ -42,15 +44,27 @@ import static com.somesh.yrfileexplorer.media.ViewerUi.text;
  * controls.
  */
 public class VideoViewerActivity extends Activity {
+    private enum DisplayMode {
+        FULL_SCREEN("Full Screen"), STRETCH("Stretch"), FIT("Fit");
+
+        final String label;
+
+        DisplayMode(String label) {
+            this.label = label;
+        }
+    }
+
     private final Handler handler = new Handler(Looper.getMainLooper());
     private VideoView video;
     private FrameLayout stage;
     private LinearLayout header, panel;
-    private ImageButton play, fit;
+    private ImageButton play, displayButton;
     private SeekBar seek;
     private TextView elapsed, duration;
     private ProgressBar loading;
-    private boolean ready, seeking, controls = true, fill, playingBeforePause, showingPause;
+    private boolean ready, seeking, controls = true, playingBeforePause, showingPause;
+    private DisplayMode displayMode = DisplayMode.FIT;
+    private PopupWindow displayMenu;
     private int position, width, height;
     private final Runnable hide = () -> showControls(false);
     private final Runnable tick = new Runnable() {
@@ -85,7 +99,11 @@ public class VideoViewerActivity extends Activity {
         boolean dark = ViewerUi.isDark(this);
         position = state == null ? 0 : state.getInt("position");
         playingBeforePause = state == null || state.getBoolean("playing", true);
-        fill = state != null && state.getBoolean("fill");
+        if (state != null) {
+            int savedMode = state.getInt("displayMode", state.getBoolean("fill")
+                    ? DisplayMode.FULL_SCREEN.ordinal() : DisplayMode.FIT.ordinal());
+            displayMode = DisplayMode.values()[savedMode];
+        }
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(Color.BLACK);
         Window window = getWindow();
@@ -103,7 +121,18 @@ public class VideoViewerActivity extends Activity {
             if (r - l != or - ol || b - t != ob - ot)
                 sizeVideo();
         });
-        video = new VideoView(this);
+        video = new VideoView(this) {
+            @Override
+            protected void onMeasure(int widthSpec, int heightSpec) {
+                if (displayMode == DisplayMode.STRETCH
+                        && MeasureSpec.getMode(widthSpec) == MeasureSpec.EXACTLY
+                        && MeasureSpec.getMode(heightSpec) == MeasureSpec.EXACTLY) {
+                    setMeasuredDimension(MeasureSpec.getSize(widthSpec), MeasureSpec.getSize(heightSpec));
+                } else {
+                    super.onMeasure(widthSpec, heightSpec);
+                }
+            }
+        };
         video.setOnTouchListener((v, event) -> {
             if (event.getAction() == android.view.MotionEvent.ACTION_UP) {
                 showControls(!controls);
@@ -258,13 +287,9 @@ public class VideoViewerActivity extends Activity {
         actions.addView(center, controlSlot());
         actions.addView(control(R.drawable.ic_video_forward_10, "Forward ten seconds", () -> skip(10000)),
                 controlSlot());
-        fit = control(R.drawable.ic_video_fit, "Fit or fill", () -> {
-            fill = !fill;
-            updateFitButton();
-            sizeVideo();
-        });
-        updateFitButton();
-        actions.addView(fit, controlSlot());
+        displayButton = control(R.drawable.ic_video_display, "Video display mode", this::showDisplayModes);
+        updateDisplayButton();
+        actions.addView(displayButton, controlSlot());
         bar.addView(actions);
         return bar;
     }
@@ -279,9 +304,46 @@ public class VideoViewerActivity extends Activity {
                 : ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
     }
 
-    private void updateFitButton() {
-        fit.setColorFilter(fill ? CYAN : Color.WHITE);
-        fit.setContentDescription(fill ? "Fit video to screen" : "Fill screen with video");
+    private void updateDisplayButton() {
+        displayButton.setColorFilter(displayMode == DisplayMode.FIT ? Color.WHITE : CYAN);
+        displayButton.setContentDescription("Video display mode, " + displayMode.label);
+    }
+
+    private void showDisplayModes() {
+        if (displayMenu != null) return;
+        boolean dark = ViewerUi.isDark(this);
+        LinearLayout options = new LinearLayout(this);
+        options.setOrientation(LinearLayout.VERTICAL);
+        options.setPadding(0, dp(this, 6), 0, dp(this, 6));
+        int rowHeight = dp(this, 48);
+        DisplayMode[] modes = DisplayMode.values();
+        int popupHeight = modes.length * rowHeight + options.getPaddingTop() + options.getPaddingBottom();
+        PopupWindow popup = new PopupWindow(options, dp(this, 164), popupHeight, true);
+        popup.setBackgroundDrawable(rounded(this, dark ? 0xff333333 : Color.WHITE, 12));
+        popup.setElevation(dark ? 0 : dp(this, 4));
+        popup.setOutsideTouchable(true);
+        for (DisplayMode mode : modes) {
+            boolean selected = displayMode == mode;
+            TextView option = text(this, mode.label, 14, selected ? CYAN : dark ? 0xffeef3f8 : 0xff1c2938);
+            option.setSelected(selected);
+            option.setPaddingRelative(dp(this, 16), 0, dp(this, 16), 0);
+            option.setBackground(new RippleDrawable(ColorStateList.valueOf(0x220ba5c6), null,
+                    new ColorDrawable(Color.WHITE)));
+            option.setOnClickListener(view -> {
+                displayMode = mode;
+                updateDisplayButton();
+                sizeVideo();
+                popup.dismiss();
+            });
+            options.addView(option, new LinearLayout.LayoutParams(-1, rowHeight));
+        }
+        popup.setOnDismissListener(() -> {
+            displayMenu = null;
+            scheduleHide();
+        });
+        displayMenu = popup;
+        int gap = dp(this, 6);
+        popup.showAsDropDown(displayButton, 0, -displayButton.getHeight() - popupHeight - gap, Gravity.END);
     }
 
     private void updatePlayButton() {
@@ -303,15 +365,20 @@ public class VideoViewerActivity extends Activity {
     private void sizeVideo() {
         if (width <= 0 || height <= 0 || stage.getWidth() == 0 || stage.getHeight() == 0)
             return;
-        float x = (float) stage.getWidth() / width, y = (float) stage.getHeight() / height;
-        float scale = fill ? Math.max(x, y) : Math.min(x, y);
-        video.setLayoutParams(new FrameLayout.LayoutParams(Math.max(1, Math.round(width * scale)),
-                Math.max(1, Math.round(height * scale)), Gravity.CENTER));
+        int targetWidth = stage.getWidth();
+        int targetHeight = stage.getHeight();
+        if (displayMode != DisplayMode.STRETCH) {
+            float x = (float) targetWidth / width, y = (float) targetHeight / height;
+            float scale = displayMode == DisplayMode.FULL_SCREEN ? Math.max(x, y) : Math.min(x, y);
+            targetWidth = Math.max(1, Math.round(width * scale));
+            targetHeight = Math.max(1, Math.round(height * scale));
+        }
+        video.setLayoutParams(new FrameLayout.LayoutParams(targetWidth, targetHeight, Gravity.CENTER));
     }
 
     private void scheduleHide() {
         handler.removeCallbacks(hide);
-        if (ready && controls && !seeking && video.isPlaying())
+        if (displayMenu == null && ready && controls && !seeking && video.isPlaying())
             handler.postDelayed(hide, 3500);
     }
 
@@ -357,6 +424,7 @@ public class VideoViewerActivity extends Activity {
 
     @Override
     protected void onPause() {
+        if (displayMenu != null) displayMenu.dismiss();
         if (ready) {
             position = video.getCurrentPosition();
             playingBeforePause = video.isPlaying();
@@ -382,7 +450,7 @@ public class VideoViewerActivity extends Activity {
     protected void onSaveInstanceState(Bundle state) {
         state.putInt("position", ready ? video.getCurrentPosition() : position);
         state.putBoolean("playing", ready ? video.isPlaying() : playingBeforePause);
-        state.putBoolean("fill", fill);
+        state.putInt("displayMode", displayMode.ordinal());
         super.onSaveInstanceState(state);
     }
 

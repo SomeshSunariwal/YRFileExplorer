@@ -293,9 +293,7 @@ public final class WifiDirectSharing implements AutoCloseable {
     private static String message(Exception e){return e.getMessage()==null?"Sharing could not finish. Reconnect and retry.":e.getMessage();}
 
     private File defaultReceiveFolder() {
-        return new File(
-                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-                "YR Sharing");
+        return Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
     }
 
     private File receiveFolder() throws IOException {
