@@ -40,7 +40,10 @@ class _SharingHistoryPageState extends State<SharingHistoryPage> {
         properties = await Native.call<Map>('properties', {'path': path});
       } on PlatformException {
         if (context.mounted) {
-          showError(context, 'This file is no longer available at its saved location.');
+          showError(
+            context,
+            'This file is no longer available at its saved location.',
+          );
         }
         return;
       }
@@ -48,7 +51,10 @@ class _SharingHistoryPageState extends State<SharingHistoryPage> {
       if (properties == null ||
           properties['directory'] == true ||
           properties['readable'] != true) {
-        showError(context, 'This file is no longer available at its saved location.');
+        showError(
+          context,
+          'This file is no longer available at its saved location.',
+        );
         return;
       }
       await openExplorerFile(
@@ -145,61 +151,65 @@ class _SharingHistoryPageState extends State<SharingHistoryPage> {
                     child: Padding(
                       padding: const EdgeInsets.all(12),
                       child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Icon(
-                            job['direction'] == 'Sent'
-                                ? Icons.north_east_rounded
-                                : Icons.south_west_rounded,
-                            color: primaryBlue,
-                            size: 22,
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              job['name'],
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w500,
+                          Row(
+                            children: [
+                              Icon(
+                                job['direction'] == 'Sent'
+                                    ? Icons.north_east_rounded
+                                    : Icons.south_west_rounded,
+                                color: primaryBlue,
+                                size: 22,
                               ),
-                            ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  job['name'],
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                '${(fraction * 100).floor()}%',
+                                style: const TextStyle(
+                                  color: primaryBlue,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              if (canOpen) ...[
+                                const SizedBox(width: 6),
+                                const Icon(Icons.chevron_right, size: 18),
+                              ],
+                            ],
                           ),
-                          const SizedBox(width: 8),
+                          const SizedBox(height: 8),
+                          ExplorerProgressBar(value: fraction, height: 5),
+                          const SizedBox(height: 7),
                           Text(
-                            '${(fraction * 100).floor()}%',
-                            style: const TextStyle(
-                              color: primaryBlue,
-                              fontWeight: FontWeight.w600,
+                            '${job['status']} · ${job['peer']}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
                             ),
                           ),
-                          if (canOpen) ...[
-                            const SizedBox(width: 6),
-                            const Icon(Icons.chevron_right, size: 18),
-                          ],
+                          const SizedBox(height: 3),
+                          Text(
+                            '${sizeLabel(bytes)} / ${sizeLabel(size)}',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
+                            ),
+                          ),
                         ],
-                      ),
-                      const SizedBox(height: 8),
-                      ExplorerProgressBar(value: fraction, height: 5),
-                      const SizedBox(height: 7),
-                      Text(
-                        '${job['status']} · ${job['peer']}',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        '${sizeLabel(bytes)} / ${sizeLabel(size)}',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
                       ),
                     ),
                   ),

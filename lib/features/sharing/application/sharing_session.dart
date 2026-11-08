@@ -17,25 +17,51 @@ class SharingSession extends ChangeNotifier {
   }
   Timer? _refreshTimer;
   Future<void>? _refreshing;
+  bool _refreshAgain = false;
+  int _historyRevision = -1;
+  final _connection = ValueNotifier(false);
+  ValueListenable<bool> get connection => _connection;
   Json status = {};
   List<Json> history = [];
+  List<Json> devices = [];
+  List<Json> networks = [];
   String? loadError;
-  List<Json> get devices => jsonRows(status['devices']);
-  List<Json> get networks => jsonRows(status['networks']);
-  bool get connected => devices.isNotEmpty;
-  Future<void> refresh() =>
-      _refreshing ??= _load().whenComplete(() => _refreshing = null);
-  Future<void> _load() async {
-    try {
-      status = Map<String, dynamic>.from(
-        await Native.call<Map>('sharingStatus') ?? {},
-      );
-      history = await Native.rows('sharingHistory');
-      loadError = null;
-    } catch (e) {
-      loadError = e.toString();
+  bool get connected => _connection.value;
+
+  Future<void> refresh() {
+    final pending = _refreshing;
+    if (pending != null) {
+      _refreshAgain = true;
+      return pending;
     }
-    notifyListeners();
+    return _refreshing = _load().whenComplete(() => _refreshing = null);
+  }
+
+  Future<void> _load() async {
+    do {
+      _refreshAgain = false;
+      try {
+        final snapshot = Map<String, dynamic>.from(
+          await Native.call<Map>('sharingStatus', {
+                'historyRevision': _historyRevision,
+              }) ??
+              {},
+        );
+        final updatedHistory = snapshot.remove('history') as Map?;
+        if (updatedHistory != null) {
+          history = jsonRows(updatedHistory['rows']);
+          _historyRevision = updatedHistory['revision'] as int;
+        }
+        status = snapshot;
+        devices = jsonRows(snapshot['devices']);
+        networks = jsonRows(snapshot['networks']);
+        loadError = null;
+        _connection.value = devices.isNotEmpty;
+      } catch (e) {
+        loadError = e.toString();
+      }
+      notifyListeners();
+    } while (_refreshAgain);
   }
 
   Future<void> permission() async {
@@ -45,15 +71,13 @@ class SharingSession extends ChangeNotifier {
     await Native.localNetworkAccess();
   }
 
-  Future<void> create() async {
-    await permission();
-    await Native.call('sharingCreate');
-    await refresh();
-  }
+  Future<void> create() => _start('sharingCreate');
 
-  Future<void> discover() async {
+  Future<void> discover() => _start('sharingDiscover');
+
+  Future<void> _start(String method) async {
     await permission();
-    await Native.call('sharingDiscover');
+    await Native.call(method);
     await refresh();
   }
 

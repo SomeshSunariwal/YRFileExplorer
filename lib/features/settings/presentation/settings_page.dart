@@ -20,12 +20,15 @@ class SettingsPage extends StatelessWidget {
         'sharingDefaultReceiveFolder',
       );
       final volumes = await Native.rows('volumes');
+      final primaryPath =
+          volumes
+                  .where((volume) => volume['removable'] != true)
+                  .firstOrNull?['path']
+              as String?;
       final current = settings.sharingReceiveFolder ?? defaultPath;
       final initialPath = current != null && await Directory(current).exists()
           ? current
-          : volumes.where((volume) => volume['removable'] != true)
-                .firstOrNull?['path'] as String? ??
-                '/storage/emulated/0';
+          : primaryPath ?? '/storage/emulated/0';
       if (!context.mounted) return;
       final path = await chooseLocalDirectory(
         context,
@@ -38,8 +41,9 @@ class SettingsPage extends StatelessWidget {
       settings.sharingReceiveFolder = path == defaultPath
           ? null
           : await Native.call<String>('sharingValidateReceiveFolder', {
-              'path': path,
-            });
+                  'path': path,
+                }) ??
+                (throw StateError('The receive folder could not be saved.'));
       await settings.save();
     } catch (error) {
       if (context.mounted) showError(context, error);

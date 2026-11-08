@@ -19,10 +19,12 @@ import android.os.Build;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.os.storage.StorageManager;
 import android.os.storage.StorageVolume;
 import android.provider.Settings;
 import android.media.MediaScannerConnection;
+import com.somesh.yrfileexplorer.sharing.SharingHistory.OutgoingFile;
 import io.flutter.plugin.common.MethodCall;
 import io.flutter.plugin.common.MethodChannel;
 import org.json.JSONObject;
@@ -105,8 +107,14 @@ public final class WifiDirectSharing implements AutoCloseable {
     public void handle(MethodCall call,MethodChannel.Result result){
         try {
             switch(call.method){
-                case "sharingStatus": result.success(snapshot());return;
-                case "sharingHistory": result.success(history.list());return;
+                case "sharingStatus": {
+                    Number revision = call.argument("historyRevision");
+                    Map<String, Object> status = new LinkedHashMap<>(snapshot());
+                    Map<String, Object> updatedHistory = history.since(revision == null ? -1 : revision.longValue());
+                    if (updatedHistory != null) status.put("history", updatedHistory);
+                    result.success(status);
+                    return;
+                }
                 case "sharingClearHistory": history.clear();result.success(null);changed();return;
                 case "sharingDefaultReceiveFolder":
                     result.success(defaultReceiveFolder().getPath());
@@ -259,8 +267,21 @@ public final class WifiDirectSharing implements AutoCloseable {
             state="Connected";error="";joinCode="";
             if(joinResult!=null){MethodChannel.Result result=joinResult;joinResult=null;result.success(snapshot());}changed();
         });
-        socket.setSoTimeout(0);
-        try{peer.read();}finally{peer.close();peers.remove(secure.id);main.post(()->{if(active&&generation==session){state=hosting?"Network ready":"Disconnected";changed();}});}
+        try {
+            socket.setSoTimeout(0);
+            peer.read();
+        } finally {
+            peer.close();
+            // The reader owns the incoming file. Closing the socket wakes it for cleanup.
+            if (peer.incoming != null) peer.incoming.abort();
+            peers.remove(secure.id);
+            main.post(() -> {
+                if (active && generation == session) {
+                    state = hosting ? "Network ready" : "Disconnected";
+                    changed();
+                }
+            });
+        }
     }
     private void joinFailed(String message){MethodChannel.Result r=joinResult;joinResult=null;joinCode="";generation++;for(Socket socket:handshakes)try{socket.close();}catch(IOException ignored){}handshakes.clear();if(r!=null)r.error("PAIRING",message,null);active=false;manager.cancelConnect(channel,null);manager.removeGroup(channel,null);fail(message);}
     public Map<String,Object> snapshot(){
@@ -309,41 +330,77 @@ public final class WifiDirectSharing implements AutoCloseable {
         throw new IOException("The receive folder is unavailable or not writable. Choose a folder in Settings.");
     }
 
-    private static final class Entry { final File file;final String relative,id=UUID.randomUUID().toString();final long size;Entry(File f,String name){file=f;relative=name;size=f.length();} }
-    private void collect(File f,String relative,List<Entry> files,Set<String> seen,int depth)throws IOException {
+    private void collect(File f,String relative,List<OutgoingFile> files,Set<String> seen,int depth)throws IOException {
         if(depth>64||files.size()>=10000)throw new IOException("Select fewer files or a less deeply nested folder.");
         if(Files.isSymbolicLink(f.toPath())||!seen.add(f.getCanonicalPath()))throw new IOException("Symbolic links cannot be shared.");
         if(f.isDirectory()){File[] children=f.listFiles();if(children==null)throw new IOException("This folder cannot be read.");for(File child:children)collect(child,relative+"/"+child.getName(),files,seen,depth+1);}
-        else if(f.isFile()&&f.canRead())files.add(new Entry(f,relative));else throw new IOException("This file cannot be read.");
+        else if(f.isFile()&&f.canRead())files.add(new OutgoingFile(f,relative));else throw new IOException("This file cannot be read.");
     }
     private void send(Peer peer,List<String> sources){
-        List<Entry> files=new ArrayList<>();String batch=UUID.randomUUID().toString();
+        List<OutgoingFile> files = new ArrayList<>();
+        String batch = UUID.randomUUID().toString();
         try{
             Set<String> seen=new HashSet<>();
             for(String path:sources){File f=new File(path);String canonical=f.getCanonicalPath();
                 if(!canonical.startsWith("/storage/")||canonical.startsWith(activity.getFilesDir().getPath()))throw new IOException("Only shared-storage files can be sent.");
                 if(seen.contains(canonical))continue;collect(f,f.getName(),files,seen,0);}
             if(files.isEmpty())throw new IOException("There are no readable files to send.");
-            for(Entry f:files)history.update(f.id,f.relative,peer.name,"Sent",0,f.size,"Queued",f.file.getPath());changed();
-            synchronized(peer.channel.batchLock){for(Entry f:files){
-                if(!peers.containsKey(peer.channel.id))throw new IOException("Device disconnected.");
-                CompletableFuture<Boolean> ready=new CompletableFuture<>(),done=new CompletableFuture<>();peer.ready.put(f.id,ready);peer.done.put(f.id,done);
-                peer.channel.send(new JSONObject().put("type","file").put("id",f.id).put("batch",batch).put("name",f.relative).put("size",f.size));
-                if(!ready.get(30,TimeUnit.SECONDS))throw new IOException("The receiving device declined this file.");
-                MessageDigest digest=MessageDigest.getInstance("SHA-256");long bytes=0,last=0;
-                try(InputStream in=new FileInputStream(f.file)){byte[] buffer=new byte[65536];int n;while((n=in.read(buffer))!=-1){
-                    if(bytes+n>f.size)throw new IOException("The source file changed during sharing.");
-                    digest.update(buffer,0,n);peer.channel.send(new JSONObject().put("type","data").put("id",f.id).put("data",Base64.getEncoder().encodeToString(Arrays.copyOf(buffer,n))));bytes+=n;
-                    if(System.currentTimeMillis()-last>250){history.update(f.id,f.relative,peer.name,"Sent",bytes,f.size,"Sending",f.file.getPath());changed();last=System.currentTimeMillis();}
-                }}
-                if(bytes!=f.size)throw new IOException("The source file changed during sharing.");
-                history.update(f.id,f.relative,peer.name,"Sent",bytes,f.size,"Verifying",f.file.getPath());changed();
-                peer.channel.send(new JSONObject().put("type","end").put("id",f.id).put("hash",Base64.getEncoder().encodeToString(digest.digest())));
-                if(!done.get(60,TimeUnit.SECONDS))throw new IOException("The receiving device could not save this file.");
-                history.update(f.id,f.relative,peer.name,"Sent",bytes,f.size,"Completed",f.file.getPath());peer.ready.remove(f.id);peer.done.remove(f.id);changed();
-            }}
-        }catch(Exception e){for(Entry f:files){Map<String,Object> row=history.list().stream().filter(r->f.id.equals(r.get("id"))).findFirst().orElse(null);if(row!=null&&!"Completed".equals(row.get("status")))history.update(f.id,f.relative,peer.name,"Sent",((Number)row.get("bytes")).longValue(),f.size,"Failed",f.file.getPath());}
-            peer.close();main.post(()->fail(message(e)));changed();}
+            history.enqueue(files, peer.name);
+            changed();
+            byte[] buffer = new byte[65536];
+            synchronized (peer.channel.batchLock) {
+                for (OutgoingFile file : files) sendFile(peer, batch, file, buffer);
+            }
+        } catch (Exception e) {
+            history.failPending(files);
+            peer.close();
+            main.post(() -> fail(message(e)));
+        }
+    }
+
+    private void sendFile(Peer peer, String batch, OutgoingFile file, byte[] buffer) throws Exception {
+        if (!peers.containsKey(peer.channel.id)) throw new IOException("Device disconnected.");
+        String id = file.id();
+        CompletableFuture<Boolean> ready = new CompletableFuture<>(), done = new CompletableFuture<>();
+        peer.ready.put(id, ready);
+        peer.done.put(id, done);
+        try {
+            peer.channel.send(new JSONObject().put("type", "file").put("id", id)
+                    .put("batch", batch).put("name", file.name()).put("size", file.size()));
+            if (!ready.get(30, TimeUnit.SECONDS)) throw new IOException("The receiving device declined this file.");
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            long bytes = 0, lastUpdate = -250;
+            try (InputStream in = new FileInputStream(file.file())) {
+                int count;
+                while ((count = in.read(buffer)) != -1) {
+                    bytes += count;
+                    if (bytes > file.size()) throw new IOException("The source file changed during sharing.");
+                    digest.update(buffer, 0, count);
+                    byte[] chunk = count == buffer.length ? buffer : Arrays.copyOf(buffer, count);
+                    peer.channel.send(new JSONObject().put("type", "data").put("id", id)
+                            .put("data", Base64.getEncoder().encodeToString(chunk)));
+                    long now = SystemClock.elapsedRealtime();
+                    if (now - lastUpdate >= 250) {
+                        recordSent(peer, file, bytes, "Sending");
+                        lastUpdate = now;
+                    }
+                }
+            }
+            if (bytes != file.size()) throw new IOException("The source file changed during sharing.");
+            recordSent(peer, file, bytes, "Verifying");
+            peer.channel.send(new JSONObject().put("type", "end").put("id", id)
+                    .put("hash", Base64.getEncoder().encodeToString(digest.digest())));
+            if (!done.get(60, TimeUnit.SECONDS)) throw new IOException("The receiving device could not save this file.");
+            recordSent(peer, file, bytes, "Completed");
+        } finally {
+            peer.ready.remove(id);
+            peer.done.remove(id);
+        }
+    }
+
+    private void recordSent(Peer peer, OutgoingFile file, long bytes, String status) {
+        history.updateSent(file, peer.name, bytes, status);
+        changed();
     }
     private final class Peer implements AutoCloseable {
         final DirectChannel channel;final String name;
@@ -364,13 +421,26 @@ public final class WifiDirectSharing implements AutoCloseable {
             case "saved":{CompletableFuture<Boolean> f=done.get(id);if(f!=null)f.complete(m.optBoolean("ok"));break;}
             case "file":
                 if(incoming!=null)throw new IOException("Unexpected file in sharing stream.");
-                try{incoming=new Incoming(m,this);channel.send(new JSONObject().put("type","ready").put("id",id).put("ok",true));}
-                catch(Exception e){channel.send(new JSONObject().put("type","ready").put("id",id).put("ok",false));throw e;}break;
+                try {
+                    incoming = new Incoming(m, this);
+                } catch (Exception e) {
+                    int session = generation;
+                    main.post(() -> {
+                        if (active && generation == session) {
+                            error = message(e);
+                            changed();
+                        }
+                    });
+                    channel.send(new JSONObject().put("type","ready").put("id",id).put("ok",false));
+                    return;
+                }
+                channel.send(new JSONObject().put("type","ready").put("id",id).put("ok",true));
+                break;
             case "data":if(incoming==null||!incoming.id.equals(id))throw new IOException("Unexpected sharing data.");incoming.write(Base64.getDecoder().decode(m.getString("data")));break;
             case "end":if(incoming==null||!incoming.id.equals(id))throw new IOException("Unexpected file completion.");incoming.finish(m.getString("hash"));incoming=null;channel.send(new JSONObject().put("type","saved").put("id",id).put("ok",true));break;
             default:throw new IOException("Unrecognized sharing message.");
         }}}
-        @Override public void close(){channel.close();if(incoming!=null){incoming.abort();incoming=null;}ready.values().forEach(f->f.complete(false));done.values().forEach(f->f.complete(false));}
+        @Override public void close(){channel.close();ready.values().forEach(f->f.complete(false));done.values().forEach(f->f.complete(false));}
     }
     private final class Incoming {
         final String id,name,peer;final long size;long bytes,last;final File target,temp;final FileOutputStream out;final MessageDigest digest;
@@ -391,11 +461,41 @@ public final class WifiDirectSharing implements AutoCloseable {
             if(size>parent.getUsableSpace()-8*1024*1024)throw new IOException("Not enough storage to receive this file.");
             File chosen=new File(parent,parts[parts.length-1]);for(int n=1;chosen.exists();n++)chosen=new File(parent,n+"_"+parts[parts.length-1]);
             target=chosen;temp=File.createTempFile(".yr-sharing-",".part",parent);out=new FileOutputStream(temp);digest=MessageDigest.getInstance("SHA-256");
-            history.update(id,name,peer,"Received",0,size,"Receiving",null);changed();
+            recordReceived("Receiving", null);
         }
-        void write(byte[] data)throws Exception {if(bytes+data.length>size)throw new IOException("File exceeds its declared size.");out.write(data);digest.update(data);bytes+=data.length;if(System.currentTimeMillis()-last>250){history.update(id,name,peer,"Received",bytes,size,"Receiving",null);changed();last=System.currentTimeMillis();}}
-        void finish(String hash)throws Exception {if(bytes!=size||!MessageDigest.isEqual(digest.digest(),Base64.getDecoder().decode(hash)))throw new IOException("File verification failed.");out.getFD().sync();out.close();Files.move(temp.toPath(),target.toPath());history.update(id,name,peer,"Received",bytes,size,"Completed",target.getPath());MediaScannerConnection.scanFile(activity,new String[]{target.getPath()},null,null);changed();}
-        void abort(){try{out.close();}catch(Exception ignored){}temp.delete();history.update(id,name,peer,"Received",bytes,size,"Interrupted",null);changed();}
+        void write(byte[] data) throws IOException {
+            if (bytes + data.length > size) throw new IOException("File exceeds its declared size.");
+            out.write(data);
+            digest.update(data);
+            bytes += data.length;
+            long now = SystemClock.elapsedRealtime();
+            if (now - last >= 250) {
+                recordReceived("Receiving", null);
+                last = now;
+            }
+        }
+
+        void finish(String hash) throws IOException {
+            if (bytes != size || !MessageDigest.isEqual(digest.digest(), Base64.getDecoder().decode(hash))) {
+                throw new IOException("File verification failed.");
+            }
+            out.getFD().sync();
+            out.close();
+            Files.move(temp.toPath(), target.toPath());
+            recordReceived("Completed", target.getPath());
+            MediaScannerConnection.scanFile(activity, new String[]{target.getPath()}, null, null);
+        }
+
+        void abort() {
+            try { out.close(); } catch (IOException ignored) {}
+            temp.delete();
+            recordReceived("Interrupted", null);
+        }
+
+        private void recordReceived(String status, String path) {
+            history.updateReceived(id, name, peer, bytes, size, status, path);
+            changed();
+        }
     }
     public void stop(){
         active=false;hosting=false;generation++;code="";joinCode="";state="Idle";error="";nearby.clear();

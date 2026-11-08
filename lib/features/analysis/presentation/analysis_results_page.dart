@@ -151,7 +151,7 @@ class _AnalysisResultsPageState extends State<AnalysisResultsPage> {
 
   void copy(bool move) {
     widget.clipboard.put(selected.toList(), move);
-    setState(() => selected.clear());
+    clearSelection();
   }
 
   Future<void> remove() async {
@@ -191,7 +191,7 @@ class _AnalysisResultsPageState extends State<AnalysisResultsPage> {
 
   void back() {
     if (selected.isNotEmpty) {
-      setState(() => selected.clear());
+      clearSelection();
       return;
     }
     final s = ExplorerWorkspaceSession.instance;
@@ -202,6 +202,25 @@ class _AnalysisResultsPageState extends State<AnalysisResultsPage> {
           : null,
     );
   }
+
+  void clearSelection() => setState(selected.clear);
+
+  void toggleSelection(String path) => setState(() {
+    if (!selected.remove(path)) selected.add(path);
+  });
+
+  void selectAll() => setState(() {
+    if (duplicates) {
+      selected.clear();
+      for (final group in duplicateGroups) {
+        selected.addAll(
+          group.files.skip(1).map((file) => file['path'] as String),
+        );
+      }
+    } else {
+      selected.addAll(rows.map((row) => row['path'] as String));
+    }
+  });
 
   Widget duplicateList() => ListView.builder(
     padding: EdgeInsets.fromLTRB(
@@ -226,11 +245,7 @@ class _AnalysisResultsPageState extends State<AnalysisResultsPage> {
                 ? expandedGroups.remove(group.id)
                 : expandedGroups.add(group.id),
           ),
-          onToggle: (path) => setState(
-            () => selected.contains(path)
-                ? selected.remove(path)
-                : selected.add(path),
-          ),
+          onToggle: toggleSelection,
           onOpen: (file) async {
             try {
               await openExplorerFile(
@@ -255,18 +270,8 @@ class _AnalysisResultsPageState extends State<AnalysisResultsPage> {
     onBack: back,
     selecting: selected.isNotEmpty,
     selectAllLabel: duplicates ? 'Select extras' : 'Select all',
-    onSelectAll: () => setState(() {
-      if (duplicates) {
-        selected.clear();
-        selected.addAll([
-          for (final group in duplicateGroups)
-            for (final file in group.files.skip(1)) file['path'] as String,
-        ]);
-      } else {
-        selected.addAll(rows.map((e) => e['path'] as String));
-      }
-    }),
-    onClearSelection: () => setState(() => selected.clear()),
+    onSelectAll: selectAll,
+    onClearSelection: clearSelection,
     title: Text(
       selected.isEmpty ? widget.title : '${selected.length}/${rows.length}',
     ),
@@ -305,18 +310,7 @@ class _AnalysisResultsPageState extends State<AnalysisResultsPage> {
             ExplorerAction(
               icon: Icons.select_all,
               label: duplicates ? 'Select extras' : 'Select all',
-              onTap: () => setState(() {
-                if (duplicates) {
-                  selected.clear();
-                  selected.addAll([
-                    for (final group in duplicateGroups)
-                      for (final file in group.files.skip(1))
-                        file['path'] as String,
-                  ]);
-                } else {
-                  selected.addAll(rows.map((e) => e['path'] as String));
-                }
-              }),
+              onTap: selectAll,
             ),
             if (duplicates && selected.length == 1)
               ExplorerAction(
@@ -334,7 +328,7 @@ class _AnalysisResultsPageState extends State<AnalysisResultsPage> {
               ExplorerAction(
                 icon: Icons.deselect,
                 label: 'Clear',
-                onTap: () => setState(() => selected.clear()),
+                onTap: clearSelection,
               ),
             ExplorerAction(
               icon: Icons.filter_none,
@@ -374,11 +368,7 @@ class _AnalysisResultsPageState extends State<AnalysisResultsPage> {
               itemCount: rows.length,
               itemBuilder: (_, i) {
                 final e = rows[i], path = e['path'] as String;
-                void toggle() => setState(
-                  () => selected.contains(path)
-                      ? selected.remove(path)
-                      : selected.add(path),
-                );
+                void toggle() => toggleSelection(path);
                 return SelectionDragItem(
                   id: path,
                   child: ListTile(

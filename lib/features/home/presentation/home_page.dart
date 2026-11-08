@@ -376,7 +376,7 @@ class _ExplorerHomeState extends State<ExplorerHome>
     List<Widget> entries, {
     bool initiallyExpanded = true,
     int columns = 3,
-    double tileHeight = 56,
+    double? tileHeight,
   }) => _panel(
     ExpansionTile(
       key: PageStorageKey('home-section-$title'),
@@ -396,7 +396,12 @@ class _ExplorerHomeState extends State<ExplorerHome>
           physics: const NeverScrollableScrollPhysics(),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: columns,
-            mainAxisExtent: tileHeight,
+            mainAxisExtent:
+                tileHeight ??
+                (MediaQuery.textScalerOf(context).scale(12) * 2.5 + 8).clamp(
+                  48.0,
+                  double.infinity,
+                ),
           ),
           itemCount: entries.length,
           itemBuilder: (_, index) => entries[index],

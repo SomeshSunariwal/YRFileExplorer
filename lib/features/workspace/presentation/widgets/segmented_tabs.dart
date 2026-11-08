@@ -46,7 +46,7 @@ class _ReferenceTabsState extends State<ReferenceTabs>
       session,
       motion,
       session.swipeMotion,
-      sharing,
+      sharing.connection,
     ]);
     session.addListener(changed);
     WidgetsBinding.instance.addPostFrameCallback((_) {
