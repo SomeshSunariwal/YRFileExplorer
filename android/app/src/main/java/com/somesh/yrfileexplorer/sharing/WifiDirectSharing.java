@@ -67,6 +67,7 @@ import java.util.function.Consumer;
  */
 public final class WifiDirectSharing implements AutoCloseable {
     private static final int PORT = 47861, PERMISSION = 905;
+    private static final String SERVICE_NAME = "YRSharing", SERVICE_TYPE = "_yrsharing._tcp";
     private final Activity activity;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final Consumer<Map<String, Object>> events;
@@ -221,12 +222,14 @@ public final class WifiDirectSharing implements AutoCloseable {
                     discoveryStarted = false;
                     if (request != null)
                         manager.removeServiceRequest(channel, request, null);
-                    WifiP2pDnsSdServiceRequest scan = WifiP2pDnsSdServiceRequest.newInstance("_yrsharing._tcp");
+                    // The service-type-only overload requests PTR records, not the TXT data used here.
+                    WifiP2pDnsSdServiceRequest scan = WifiP2pDnsSdServiceRequest.newInstance(SERVICE_NAME, SERVICE_TYPE);
                     request = scan;
                     manager.setDnsSdResponseListeners(channel, (name, type, device) -> {
                     }, (domain, record, device) -> {
                         if (request != scan || !active || hosting ||
-                                !domain.startsWith("YRSharing.") || !"1".equals(record.get("version")))
+                                !(SERVICE_NAME + "." + SERVICE_TYPE + ".local.").equalsIgnoreCase(domain)
+                                || !"1".equals(record.get("version")))
                             return;
                         String name = record.get("name");
                         if (name == null || name.isBlank())
@@ -301,8 +304,7 @@ public final class WifiDirectSharing implements AutoCloseable {
                     if (peer == null || paths == null || paths.isEmpty())
                         throw new IOException("Choose a connected device and at least one file.");
                     List<String> copy = new ArrayList<>(paths);
-                    sends.execute(() -> send(peer, copy));
-                    result.success(null);
+                    sends.execute(() -> send(peer, copy, result));
                     return;
                 }
                 default:
@@ -384,7 +386,7 @@ public final class WifiDirectSharing implements AutoCloseable {
                 int session = generation;
                 state = "Network ready";
                 changed();
-                service = WifiP2pDnsSdServiceInfo.newInstance("YRSharing", "_yrsharing._tcp",
+                service = WifiP2pDnsSdServiceInfo.newInstance(SERVICE_NAME, SERVICE_TYPE,
                         Map.of("version", "1", "name", Build.MODEL));
                 manager.addLocalService(channel, service, listener(() -> {
                 }, this::fail));
@@ -610,9 +612,8 @@ public final class WifiDirectSharing implements AutoCloseable {
             throw new IOException("This file cannot be read.");
     }
 
-    private void send(Peer peer, List<String> sources) {
+    private void send(Peer peer, List<String> sources, MethodChannel.Result result) {
         List<OutgoingFile> files = new ArrayList<>();
-        String batch = UUID.randomUUID().toString();
         try {
             Set<String> seen = new HashSet<>();
             for (String path : sources) {
@@ -626,8 +627,18 @@ public final class WifiDirectSharing implements AutoCloseable {
             }
             if (files.isEmpty())
                 throw new IOException("There are no readable files to send.");
+            if (!peers.containsKey(peer.channel.id))
+                throw new IOException("Device disconnected.");
             history.enqueue(files, peer.name);
-            changed();
+        } catch (Exception e) {
+            main.post(() -> result.error("SHARING_FILES", message(e), null));
+            return;
+        }
+
+        changed();
+        main.post(() -> result.success(null));
+        String batch = UUID.randomUUID().toString();
+        try {
             byte[] buffer = new byte[65536];
             synchronized (peer.channel.batchLock) {
                 for (OutgoingFile file : files)

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:yr_file_explorer/core/models/json.dart';
-import 'package:yr_file_explorer/core/theme/explorer_style.dart';
 import 'package:yr_file_explorer/core/theme/file_categories.dart';
 import 'package:yr_file_explorer/features/sharing/application/sharing_session.dart';
 import 'package:yr_file_explorer/features/workspace/application/workspace_session.dart';
@@ -161,7 +160,7 @@ class _CodeDialogState extends State<_CodeDialog> {
   );
 }
 
-/// Small anchored side picker. Selection queues a transfer before navigating.
+/// Select a connected device and queue a transfer before opening history.
 Future<bool> showSharingDevices(
   BuildContext context,
   List<String> paths,
@@ -169,81 +168,43 @@ Future<bool> showSharingDevices(
   final session = SharingSession.instance;
   await session.refresh();
   if (!context.mounted) return false;
-  final device = await showGeneralDialog<String>(
+  final device = await showDialog<String>(
     context: context,
-    barrierDismissible: true,
-    barrierLabel: 'Close device picker',
-    barrierColor: Colors.black26,
-    transitionDuration: MediaQuery.disableAnimationsOf(context)
-        ? Duration.zero
-        : const Duration(milliseconds: 220),
-    transitionBuilder: (_, animation, _, child) => FadeTransition(
-      opacity: animation,
-      child: SlideTransition(
-        position: Tween(begin: const Offset(.15, .12), end: Offset.zero)
-            .animate(
-              CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
-            ),
-        child: child,
-      ),
-    ),
-    pageBuilder: (dialog, _, _) => Align(
-      alignment: Alignment.bottomRight,
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(
-          16,
-          24,
-          16,
-          MediaQuery.paddingOf(dialog).bottom + explorerFooterHeight + 24,
-        ),
-        child: SizedBox(
-          width: 280,
-          child: Material(
-            elevation: 12,
-            color: Theme.of(dialog).colorScheme.surface,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: AnimatedBuilder(
-              animation: session,
-              builder: (_, _) => Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const ExplorerDialogHeader(title: Text('Send to')),
-                  if (session.devices.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.all(18),
-                      child: Text(
-                        'No connected devices. Join or create a network in Sharing first.',
-                      ),
-                    ),
-                  for (final peer in session.devices)
-                    ListTile(
-                      leading: const Icon(
-                        Icons.phone_android_outlined,
-                        color: primaryBlue,
-                      ),
-                      title: Text(
-                        peer['name'],
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      subtitle: Text(
-                        '${paths.length} selected ${paths.length == 1 ? 'item' : 'items'}',
-                      ),
-                      trailing: const Icon(
-                        Icons.arrow_forward_rounded,
-                        size: 20,
-                        color: primaryBlue,
-                      ),
-                      onTap: () => Navigator.pop(dialog, peer['id'] as String),
-                    ),
-                ],
+    builder: (dialog) => AnimatedBuilder(
+      animation: session,
+      builder: (_, _) => ExplorerChoiceDialog(
+        maxWidth: 280,
+        title: const Text('Send to'),
+        children: [
+          if (session.devices.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(18),
+              child: Text(
+                'No connected devices. Join or create a network in Sharing first.',
               ),
             ),
-          ),
-        ),
+          for (final peer in session.devices)
+            ListTile(
+              leading: const Icon(
+                Icons.phone_android_outlined,
+                color: primaryBlue,
+              ),
+              title: Text(
+                peer['name'],
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              subtitle: Text(
+                '${paths.length} selected ${paths.length == 1 ? 'item' : 'items'}',
+              ),
+              trailing: const Icon(
+                Icons.arrow_forward_rounded,
+                size: 20,
+                color: primaryBlue,
+              ),
+              onTap: () => Navigator.pop(dialog, peer['id'] as String),
+            ),
+        ],
       ),
     ),
   );
