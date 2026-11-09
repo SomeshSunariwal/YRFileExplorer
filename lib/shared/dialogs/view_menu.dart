@@ -318,6 +318,7 @@ Future<String?> showExplorerActionMenu(
     'Move to Private Space': Icons.lock_outline,
     'Move Out': Icons.lock_open_outlined,
     'Share': Icons.share_outlined,
+    'Send': Icons.send_outlined,
     'Encrypt': Icons.lock_outline,
     'Decrypt': Icons.lock_open,
     'Compress': Icons.folder_zip_outlined,
